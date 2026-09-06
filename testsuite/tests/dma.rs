@@ -307,6 +307,67 @@ mod tests {
         assert!(test_res.is_ok());
     }
 
+    // ==== Parallel memory-to-memory transfers ================================================
+
+    /// Two independent `memory_transfer` calls on different DMA channels, started in parallel
+    /// and then awaited. This verifies that multiple DMA channels can operate simultaneously
+    /// without interference — a pure memory-to-memory test that doesn't involve any peripheral.
+    ///
+    /// Channel 0 and channel 4 each copy a buffer of `MTU` bytes. Both `memory_transfer` calls
+    /// are started (returning `ChannelTransfer` tokens) before either is polled, so the DMA
+    /// engines overlap. Then both are resolved in turn.
+    #[test]
+    #[timeout(10)]
+    fn transfer_parallel((crc, mut dma): (Crc<u32>, Dma)) {
+        const LEN: usize = MTU;
+
+        let src = &SRC_BUF_U8[..LEN];
+
+        // Channel 0 buffer
+        let mut dst0 = [0u8; LEN];
+        // Channel 4 buffer
+        let mut dst4 = [0u8; LEN];
+
+        // Start both transfers (DMA starts immediately, non-blocking)
+        let transfer0 = dma.ch0.memory_transfer(src, &mut dst0).expect("ch0 memory_transfer");
+        let transfer4 = dma.ch4.memory_transfer(src, &mut dst4).expect("ch4 memory_transfer");
+
+        // Wait for channel 0 to complete
+        let res0 = {
+            let mut t = transfer0;
+            loop {
+                if let Some(r) = t.try_resolve() {
+                    break r;
+                }
+            }
+        };
+        assert!(res0.is_ok(), "ch0 transfer failed");
+
+        // Wait for channel 4 to complete
+        let res4 = {
+            let mut t = transfer4;
+            loop {
+                if let Some(r) = t.try_resolve() {
+                    break r;
+                }
+            }
+        };
+        assert!(res4.is_ok(), "ch4 transfer failed");
+
+        // Verify both buffers match the source
+        crc.update(src);
+        let src_crc = crc.finalize();
+        crc.update(&dst0);
+        let dst0_crc = crc.finalize();
+        assert_eq!(src_crc, dst0_crc, "ch0 CRC mismatch");
+
+        crc.update(src);
+        let src_crc = crc.finalize();
+        crc.update(&dst4);
+        let dst4_crc = crc.finalize();
+        assert_eq!(src_crc, dst4_crc, "ch4 CRC mismatch");
+    }
+
     // ==== Source buffers (stored in Flash) ====================================================
 
     const SRC_BUF_U8_SIZE: usize = MTU * MAX_RAM_TRANSFERS;
