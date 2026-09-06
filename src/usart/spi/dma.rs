@@ -39,9 +39,12 @@ impl<'d, T: UsartInstance> SpiDma<'d, T> {
 
         let (tx_sel, rx_sel) = Self::dma_sources(T::id());
         tx.set_peripheral_req(tx_sel);
-        tx.set_ignore_single_req(true);
         rx.set_peripheral_req(rx_sel);
-        rx.set_ignore_single_req(true);
+
+        // Note: IGNORESREQ is set per-transfer in `build_descriptors` (TX only),
+        // not here. The channel CTRL register is overwritten by the descriptor
+        // on each `set_descriptor` call, so any setting here would be lost.
+        // See errata USART_E203 workaround.
 
         Self {
             spi,
@@ -189,6 +192,7 @@ impl<'d, T: UsartInstance> SpiDma<'d, T> {
                 TargetAddr::Fixed(per_tx_addr),
                 unit,
                 tx_units,
+                true,
                 &mut tx_list,
             )?;
 
@@ -202,6 +206,7 @@ impl<'d, T: UsartInstance> SpiDma<'d, T> {
                     TargetAddr::Fixed(per_tx_addr),
                     unit,
                     tx_filler_units,
+                    true,
                     &mut tx_list,
                 )?;
             }
@@ -217,6 +222,7 @@ impl<'d, T: UsartInstance> SpiDma<'d, T> {
                 TargetAddr::Fixed(per_tx_addr),
                 unit,
                 tx_filler_units,
+                true,
                 &mut tx_list,
             )?;
 
@@ -233,6 +239,7 @@ impl<'d, T: UsartInstance> SpiDma<'d, T> {
                 TargetAddr::IncrementOne(rx_addr),
                 unit,
                 rx_units,
+                false,
                 &mut rx_list,
             )?;
 
@@ -246,6 +253,7 @@ impl<'d, T: UsartInstance> SpiDma<'d, T> {
                     TargetAddr::Fixed((&raw const RX_SINK) as usize),
                     unit,
                     rx_filler_units,
+                    false,
                     &mut rx_list,
                 )?;
             }
@@ -261,6 +269,7 @@ impl<'d, T: UsartInstance> SpiDma<'d, T> {
                 TargetAddr::Fixed((&raw const RX_SINK) as usize),
                 unit,
                 rx_filler_units,
+                false,
                 &mut rx_list,
             )?;
 

@@ -293,12 +293,26 @@ pub(crate) enum TargetAddr {
 ///
 /// **Descriptor list**:
 ///     - `LoopTransferDescriptor` -> `TransferDescriptor`
+///
+/// # `ignore_sreq` (Errata USART_E203 workaround)
+///
+/// When `ignore_sreq` is `true`, the IGNORESREQ bit is set on all transfer and loop
+/// transfer descriptors built by this function. This makes the LDMA ignore single
+/// requests (SREQ) and only service the channel on multiple requests (REQ) — i.e.,
+/// the LDMA fills the peripheral FIFO only when it is empty rather than on every
+/// byte of free space.
+///
+/// This is part of the workaround for errata USART_E203: in synchronous mode, if
+/// the TX DMA is serviced too frequently it can starve the RX DMA, causing the
+/// USART RX FIFO to overflow and received data to be dropped. Callers should set
+/// `ignore_sreq = true` for TX descriptors and `false` for RX descriptors.
 pub(crate) fn reduced(
     dma_ch_id: ChannelId,
     src: TargetAddr,
     dst: TargetAddr,
     unit: UnitSize,
     unit_count: usize,
+    ignore_sreq: bool,
     desc_list: &mut DescList,
 ) -> Result<TransferDescriptor, DmaError> {
     const NON_LOOP_TRANSFER_COUNT: usize = 2;
@@ -331,29 +345,31 @@ pub(crate) fn reduced(
                 .loop_()
                 .write(|w| w.set_loopcnt((loop_count - 1) as u8));
 
-            desc_list.push_linked(
-                LoopTransferDescriptor::new(
-                    Addr::Relative(0),
-                    Addr::Relative(0),
-                    TransferCount::MAX,
-                    Addr::Relative(0),
-                    unit,
-                )
-                .with_src_inc(src_addr_inc)
-                .with_dst_inc(dst_addr_inc),
-            )?;
-        }
-
-        desc_list.push_linked(
-            TransferDescriptor::new(
+            let mut loop_desc = LoopTransferDescriptor::new(
                 Addr::Relative(0),
                 Addr::Relative(0),
                 TransferCount::MAX,
+                Addr::Relative(0),
                 unit,
             )
             .with_src_inc(src_addr_inc)
-            .with_dst_inc(dst_addr_inc),
-        )?;
+            .with_dst_inc(dst_addr_inc);
+            if ignore_sreq {
+                loop_desc = loop_desc.with_ignore_single_requests();
+            }
+            desc_list.push_linked(loop_desc)?;
+        }
+
+        let mut tail_desc = TransferDescriptor::new(
+            Addr::Relative(0),
+            Addr::Relative(0),
+            TransferCount::MAX,
+            unit,
+        )
+        .with_src_inc(src_addr_inc)
+        .with_dst_inc(dst_addr_inc)
+        .with_ignore_single_requests(ignore_sreq);
+        desc_list.push_linked(tail_desc)?;
     }
 
     Ok(TransferDescriptor::new(
@@ -374,7 +390,8 @@ pub(crate) fn reduced(
         unit,
     )
     .with_src_inc(src_addr_inc)
-    .with_dst_inc(dst_addr_inc))
+    .with_dst_inc(dst_addr_inc)
+    .with_ignore_single_requests(ignore_sreq))
 }
 
 /// Construct an "extended" descriptor list and return a Transfer LINK Descriptor suitable to be written to the DMA
@@ -389,12 +406,27 @@ pub(crate) fn reduced(
 /// **Descriptor list**:
 ///     - `ImmediateDescriptor` (write to `LDMA_CHx_LOOP`) -> `TransferDescriptor` -> `LoopTransferDescriptor`
 ///       -> `TransferDescriptor`
+///
+/// # `ignore_sreq` (Errata USART_E203 workaround)
+///
+/// When `ignore_sreq` is `true`, the IGNORESREQ bit is set on all transfer and loop
+/// transfer descriptors built by this function (but not on `ImmediateDescriptor`s,
+/// which are not transfer descriptors). This makes the LDMA ignore single requests
+/// (SREQ) and only service the channel on multiple requests (REQ) — i.e., the LDMA
+/// fills the peripheral FIFO only when it is empty rather than on every byte of
+/// free space.
+///
+/// This is part of the workaround for errata USART_E203: in synchronous mode, if
+/// the TX DMA is serviced too frequently it can starve the RX DMA, causing the
+/// USART RX FIFO to overflow and received data to be dropped. Callers should set
+/// `ignore_sreq = true` for TX descriptors and `false` for RX descriptors.
 pub(crate) fn extended(
     dma_ch_id: ChannelId,
     src: TargetAddr,
     dst: TargetAddr,
     unit: UnitSize,
     unit_count: usize,
+    ignore_sreq: bool,
     desc_list: &mut DescList,
 ) -> Result<(), DmaError> {
     const NON_LOOP_TRANSFER_COUNT: usize = 2;
@@ -454,22 +486,25 @@ pub(crate) fn extended(
             unit,
         )
         .with_src_inc(src_addr_inc)
-        .with_dst_inc(dst_addr_inc),
+        .with_dst_inc(dst_addr_inc)
+        .with_ignore_single_requests(ignore_sreq),
     )?;
 
     if transfer_count > 1 {
         if loop_count > 0 {
-            desc_list.push_linked(
-                LoopTransferDescriptor::new(
-                    Addr::Relative(0),
-                    Addr::Relative(0),
-                    TransferCount::MAX,
-                    Addr::Relative(0),
-                    unit,
-                )
-                .with_src_inc(src_addr_inc)
-                .with_dst_inc(dst_addr_inc),
-            )?;
+            let mut loop_desc = LoopTransferDescriptor::new(
+                Addr::Relative(0),
+                Addr::Relative(0),
+                TransferCount::MAX,
+                Addr::Relative(0),
+                unit,
+            )
+            .with_src_inc(src_addr_inc)
+            .with_dst_inc(dst_addr_inc);
+            if ignore_sreq {
+                loop_desc = loop_desc.with_ignore_single_requests();
+            }
+            desc_list.push_linked(loop_desc)?;
         }
 
         desc_list.push_linked(
@@ -480,7 +515,8 @@ pub(crate) fn extended(
                 unit,
             )
             .with_src_inc(src_addr_inc)
-            .with_dst_inc(dst_addr_inc),
+            .with_dst_inc(dst_addr_inc)
+            .with_ignore_single_requests(ignore_sreq),
         )?;
     }
 

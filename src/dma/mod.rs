@@ -74,6 +74,13 @@ impl Dma {
         // Enable DMA clock
         crate::pac::CMU.hfbusclken0().modify(|w| w.set_ldma(true));
 
+        // Enable the LDMA error interrupt so transfer errors are detected
+        // immediately. Without this, a DMA bus error sets the ERROR flag in
+        // LDMA_IF but no interrupt fires (the channel DONE flag is NOT set on
+        // error), and the transfer hangs indefinitely.
+        // See LDMA reference manual §7.3.5 "Managing Transfer Errors".
+        mmio::ien_error_enable();
+
         unsafe {
             cortex_m::peripheral::NVIC::unmask(Interrupt::LDMA);
         }

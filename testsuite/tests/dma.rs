@@ -12,7 +12,7 @@ mod tests {
     use efm32xg_hal::{
         crc::{algos::CRC_32_CKSUM, Crc, CrcDriver},
         dma::descriptor::Descriptor,
-        dma::Dma,
+        dma::{Dma, DmaError},
     };
 
     /// The size of RAM is 32K. The destination buffer and the descriptor list (stored in the tail of `dst`)
@@ -366,6 +366,43 @@ mod tests {
         crc.update(&dst4);
         let dst4_crc = crc.finalize();
         assert_eq!(src_crc, dst4_crc, "ch4 CRC mismatch");
+    }
+
+    // ==== DMA transfer error detection ========================================================
+
+    /// Verify that a DMA transfer reading from an unmapped address triggers an AHB bus
+    /// error and the transfer resolves with `Err(DmaError::Transfer)` instead of hanging.
+    ///
+    /// See LDMA reference manual §7.3.5 "Managing Transfer Errors".
+    #[test]
+    #[timeout(5)]
+    fn transfer_error_detected((_crc, mut dma): (Crc<u32>, Dma)) {
+        const LEN: usize = 4;
+        let mut dst = [0u8; LEN];
+
+        // SAFETY: The source slice points to an unmapped address (0x7000_0000).
+        // `memory_transfer` only reads the pointer address and length — it never
+        // dereferences `src`. The DMA engine will attempt the read and trigger an
+        // AHB bus error.
+        let src = unsafe { core::slice::from_raw_parts(0x7000_0000 as *const u8, LEN) };
+
+        let mut transfer = dma
+            .ch0
+            .memory_transfer(src, &mut dst)
+            .expect("memory_transfer");
+
+        let result = loop {
+            if let Some(res) = transfer.try_resolve() {
+                break res;
+            }
+        };
+
+        assert!(result.is_err(), "expected DMA transfer error, got Ok");
+        assert!(
+            matches!(result, Err(DmaError::Transfer)),
+            "expected DmaError::Transfer, got {:?}",
+            result
+        );
     }
 
     // ==== Source buffers (stored in Flash) ====================================================

@@ -224,7 +224,17 @@ impl<'d, T: UsartInstance> Spi<'d, T> {
         self.set_divider(config.divider);
     }
 
-    /// Convert into a Spi implementation which used DMA channels
+    /// Convert into a Spi implementation which used DMA channels.
+    ///
+    /// # DMA Channel Priority (Errata USART_E203)
+    ///
+    /// The `rx` channel should have a **lower channel number** (higher LDMA
+    /// arbitration priority) than the `tx` channel. This ensures the RX DMA is
+    /// serviced before the TX DMA, preventing RX FIFO overflow that can cause
+    /// received data to be dropped and the transfer to hang indefinitely.
+    ///
+    /// For example, use `into_spi_dma(dma.ch1, dma.ch0)` (TX=ch1, RX=ch0)
+    /// rather than `into_spi_dma(dma.ch0, dma.ch1)`.
     pub fn into_spi_dma(self, tx: DmaChannel, rx: DmaChannel) -> SpiDma<'d, T> {
         SpiDma::new(self, tx, rx)
     }

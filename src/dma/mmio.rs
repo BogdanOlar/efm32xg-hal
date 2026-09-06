@@ -99,6 +99,16 @@ pub(crate) fn if_error_clear() {
     dma().ifc().write(|w| w.set_error(true));
 }
 
+/// Enable the LDMA error interrupt (LDMA_IEN.ERROR, bit 31).
+///
+/// This must be set so the LDMA interrupt fires when a channel transfer error
+/// occurs, not only when a channel DONE flag is set. Without this, a channel
+/// that stops due to a bus error will never generate an interrupt, causing the
+/// transfer to hang indefinitely.
+pub(crate) fn ien_error_enable() {
+    dma().ien().sc_set(1u32 << 31);
+}
+
 pub(crate) fn swreq(id: ChannelId) {
     dma()
         .swreq()

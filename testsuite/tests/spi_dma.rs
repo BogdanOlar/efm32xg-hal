@@ -60,7 +60,7 @@ mod tests {
             ),
             &Config::new(MODE_2, 1).with_loopback(true),
         )
-        .into_spi_dma(dma.ch0, dma.ch1);
+        .into_spi_dma(dma.ch1, dma.ch0);
         let spi1 = efm32xg_hal::usart::spi::Spi::new(
             SpiPins::new(
                 p.Usart1,
@@ -70,7 +70,7 @@ mod tests {
             ),
             &Config::new(MODE_2, 1).with_loopback(true),
         )
-        .into_spi_dma(dma.ch2, dma.ch3);
+        .into_spi_dma(dma.ch3, dma.ch2);
         (spi0, spi1, crc)
     }
 
@@ -648,10 +648,10 @@ mod tests {
     /// Interleaved transfers on two independent SPI DMA drivers (USART0 + USART1) to verify
     /// they function in parallel without interference.
     ///
-    /// The first driver (`SpiDma<'static, Usart0>`) comes from [`init`]. The second
-    /// (`SpiDma<'static, Usart1>`) is constructed here using the remaining peripherals stolen
-    /// via `unsafe { Peripherals::steal() }` (since `efm32_init` can only be called once). It
-    /// uses USART1 with different pins (pd9/pd10/pd11) and DMA channels 2/3.
+    /// The first driver (`SpiDma<'static, Usart0>`) uses USART0 with DMA channels 1/0
+    /// (TX/RX). The second (`SpiDma<'static, Usart1>`) uses USART1 with DMA channels 3/2
+    /// (TX/RX). The RX channel always has a lower channel number (higher LDMA priority)
+    /// than the TX channel, per the errata USART_E203 workaround.
     ///
     /// A subset of [`TRANSFER_CASES`] is run on both drivers in an alternating fashion:
     /// transfer on spi0, then transfer on spi1, repeat. Both are in loopback mode, so the
@@ -660,15 +660,6 @@ mod tests {
     #[test]
     #[timeout(60)]
     fn transfer_interleaved((mut spi0, mut spi1, crc): (SpiDma<'static, Usart0>, SpiDma<'static, Usart1>, Crc<u32>)) -> Result<(), ()> {
-        // TODO: Transfers larger than ~16 bytes on USART1 (DMA channels 2/3) cause
-        // `flush_blocking` to hang indefinitely. The 1-byte and 16-byte cases work, but
-        // 256-byte and larger transfers on channels 2/3 never complete. This appears to
-        // be a hardware-specific issue with the EFM32PG1B200F256IM48 board — possibly
-        // related to DMA channel priority, USART1 FIFO depth, or an interaction between
-        // the two DMA channel pairs (0/1 and 2/3) when both are active. The same transfer
-        // sizes work fine on USART0 (channels 0/1). Investigate whether this is a silicon
-        // errata or a configuration issue.
-
         // Use a representative subset of cases that exercise different transfer sizes
         // (small, medium, large, asymmetric).
         const INTERLEAVED_CASES: &[FullDuplexCase] = &[
@@ -689,6 +680,32 @@ mod tests {
                 dst_len: 16,
                 offset: 10,
                 repeat: 3,
+            },
+            // Large transfers that previously hung on USART1 (channels 2/3)
+            FullDuplexCase {
+                src_len: 256,
+                dst_len: 256,
+                offset: 10,
+                repeat: 1,
+            },
+            FullDuplexCase {
+                src_len: Descriptor::MAX_TRANSFER_UNITS,
+                dst_len: Descriptor::MAX_TRANSFER_UNITS,
+                offset: 10,
+                repeat: 1,
+            },
+            // Asymmetric: TX larger than RX and vice versa
+            FullDuplexCase {
+                src_len: 256,
+                dst_len: 1,
+                offset: 10,
+                repeat: 1,
+            },
+            FullDuplexCase {
+                src_len: 1,
+                dst_len: 256,
+                offset: 10,
+                repeat: 1,
             },
         ];
 

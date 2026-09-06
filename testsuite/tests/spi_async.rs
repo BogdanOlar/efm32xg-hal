@@ -103,7 +103,7 @@ mod tests {
             ),
             &Config::new(MODE_2, 1).with_loopback(true),
         )
-        .into_spi_dma(dma.ch0, dma.ch1);
+        .into_spi_dma(dma.ch1, dma.ch0);
         (spi, crc)
     }
 
