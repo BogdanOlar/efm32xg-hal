@@ -12,7 +12,10 @@ pub mod efemb;
 
 use crate::{
     gpio::pin::Pin,
-    pac::{letimer::vals::{Out0loc, Ufoa0}, CMU},
+    pac::{
+        letimer::vals::{Out0loc, Ufoa0},
+        CMU,
+    },
 };
 use core::marker::PhantomData;
 use cortex_m::asm::nop;
@@ -38,12 +41,11 @@ pub struct LeTimer;
 
 impl LeTimer {
     fn new() -> Self {
-        
         // Enable LE Timer
         CMU.lfaclken0().modify(|w| w.set_letimer0(true));
 
         // Sync
-        while CMU.syncbusy().read().lfaclken0() == true {
+        while CMU.syncbusy().read().lfaclken0() {
             nop()
         }
 
@@ -73,7 +75,7 @@ impl LeTimer {
         le_timer.cmd().write(|w| w.set_start(true));
 
         // Sync
-        while le_timer.syncbusy().read().cmd() == true {
+        while le_timer.syncbusy().read().cmd() {
             nop()
         }
 
@@ -105,7 +107,7 @@ mod mmio {
 
     /// Is the timer currently running
     pub(crate) fn running() -> bool {
-        timer_le().status().read().running() == true
+        timer_le().status().read().running()
     }
 
     /// Low Energy Timer Interrupt Flags
@@ -135,23 +137,17 @@ mod mmio {
     ///
     /// NOTE: This is a count _down_ timer, so actual register value will be set to `u16::MAX - cnt`
     pub(crate) fn counter_set(cnt: u16) {
-        timer_le()
-            .cnt()
-            .write(|w| w.set_cnt(u16::MAX - cnt));
+        timer_le().cnt().write(|w| w.set_cnt(u16::MAX - cnt));
     }
 
     /// Set the (logical) comparator 0 value
     pub(crate) fn comp0_set(cnt: u16) {
-        timer_le()
-            .comp0()
-            .write(|w| w.set_comp0(u16::MAX - cnt));
+        timer_le().comp0().write(|w| w.set_comp0(u16::MAX - cnt));
     }
 
     /// Set the (logical) comparator 0 value
     pub(crate) fn comp1_set(cnt: u16) {
-        timer_le()
-            .comp1()
-            .write(|w| w.set_comp1(u16::MAX - cnt));
+        timer_le().comp1().write(|w| w.set_comp1(u16::MAX - cnt));
     }
 
     /// Get the state of the given interrupt flag
@@ -255,7 +251,7 @@ mod mmio {
         });
 
         // Block until the timer commands have been applied
-        while p.syncbusy().read().cmd() == true {
+        while p.syncbusy().read().cmd() {
             nop();
         }
     }

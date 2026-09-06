@@ -130,11 +130,11 @@ impl TryFrom<DebugPinsEnabled> for DebugPinsDisabled {
 pub fn debug_pins_enabled() -> bool {
     let gpio = crate::pac::GPIO;
 
-    gpio.routepen().read().swclktckpen() == true
-        || gpio.routepen().read().swdiotmspen() == true
-        || gpio.routepen().read().swvpen() == true
-        || gpio.routepen().read().tdipen() == true
-        || gpio.routepen().read().tdopen() == true
+    gpio.routepen().read().swclktckpen()
+        || gpio.routepen().read().swdiotmspen()
+        || gpio.routepen().read().swvpen()
+        || gpio.routepen().read().tdipen()
+        || gpio.routepen().read().tdopen()
 }
 
 crate::gpio::pin::impl_fmt_debug!(DbgPin, "DbgPin");

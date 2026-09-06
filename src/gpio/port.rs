@@ -268,12 +268,12 @@ pub(crate) mod ports {
 
     /// Get the Data In Disable setting of this port (not in Alternate Mode)
     pub(crate) fn din_dis(port: PortId) -> bool {
-        get(port).ctrl().read().din_dis() == true
+        get(port).ctrl().read().din_dis()
     }
 
     /// Get the Alternate Data In Disable setting of this port
     pub(crate) fn din_dis_alt(port: PortId) -> bool {
-        get(port).ctrl().read().din_dis_alt() == true
+        get(port).ctrl().read().din_dis_alt()
     }
 
     /// Set the Data In Disable setting of this port (not in Alternate Mode)

@@ -127,7 +127,7 @@ impl Clocks {
                 CMU.oscencmd().write(|w| w.set_hfxoen(true));
 
                 // wait for HF XO clock to be stable
-                while CMU.status().read().hfxordy() == false {
+                while !CMU.status().read().hfxordy() {
                     nop();
                 }
 
@@ -141,7 +141,7 @@ impl Clocks {
                 CMU.oscencmd().write(|w| w.set_hfrcoen(true));
 
                 // wait for HF RCO clock to be stable
-                while CMU.status().read().hfrcordy() == false {
+                while !CMU.status().read().hfrcordy() {
                     nop();
                 }
 
@@ -155,7 +155,7 @@ impl Clocks {
                 CMU.oscencmd().write(|w| w.set_lfxoen(true));
 
                 // wait for LF XO clock to be stable
-                while CMU.status().read().lfxordy() == false {
+                while !CMU.status().read().lfxordy() {
                     nop();
                 }
 
@@ -169,7 +169,7 @@ impl Clocks {
                 CMU.oscencmd().write(|w| w.set_lfrcoen(true));
 
                 // wait for LF RCO clock to be stable
-                while CMU.status().read().lfrcordy() == false {
+                while !CMU.status().read().lfrcordy() {
                     nop();
                 }
 
@@ -215,17 +215,16 @@ impl Clocks {
 
     /// TODO:
     pub fn with_dbg_clk(self, clk_src: DbgClockSource) -> Self {
-        
         let dbg_clk_freq = match clk_src {
             DbgClockSource::AuxHfRco => {
                 // check if Aux High Frequency RCO is enabled
-                if CMU.status().read().auxhfrcoens() == false {
+                if !CMU.status().read().auxhfrcoens() {
                     // Enable HF RCO
                     CMU.oscencmd().write(|w| w.set_auxhfrcoen(true));
                 }
 
                 // wait for AUX HF RCO clock to be stable
-                while CMU.status().read().auxhfrcordy() == false {
+                while !CMU.status().read().auxhfrcordy() {
                     nop();
                 }
 
@@ -248,7 +247,6 @@ impl Clocks {
 
     /// TODO:
     pub fn with_lfa_clk(self, clk_src: LfClockSource) -> Self {
-        
         // The bus interface to the Low Energy A Peripherals is clocked by HFBUSCLKLE and this clock therefore needs to
         // be enabled when programming a Low Energy (LE) peripheral.
         self.enable_hf_bus_clk_le();
@@ -288,7 +286,6 @@ impl Clocks {
 
     /// TODO:
     pub fn with_lfb_clk(self, clk_src: LfBClockSource) -> Self {
-        
         let lfb_clk_freq = match clk_src {
             LfBClockSource::LfXO(freq) => {
                 // Ensure Low Frequency XO is enabled
@@ -318,11 +315,13 @@ impl Clocks {
                 // Set High Frequency Clock LE prescaler
                 let freq = match is_div_4 {
                     true => {
-                        CMU.hfpresc().modify(|w| w.set_hfclklepresc(Hfclklepresc::Div4));
+                        CMU.hfpresc()
+                            .modify(|w| w.set_hfclklepresc(Hfclklepresc::Div4));
                         self.hf_bus_clk / 4
                     }
                     false => {
-                        CMU.hfpresc().modify(|w| w.set_hfclklepresc(Hfclklepresc::Div2));
+                        CMU.hfpresc()
+                            .modify(|w| w.set_hfclklepresc(Hfclklepresc::Div2));
                         self.hf_bus_clk / 2
                     }
                 };
@@ -346,7 +345,6 @@ impl Clocks {
 
     /// TODO:
     pub fn with_lfe_clk(self, clk_src: LfClockSource) -> Self {
-        
         let lfe_clk_freq = match clk_src {
             LfClockSource::LfXO(freq) => {
                 // Ensure Low Frequency XO is enabled
@@ -386,7 +384,6 @@ impl Clocks {
 
     /// TODO:
     pub fn with_wdog_clk(self, clk_src: LfClockSource) -> Self {
-        
         let wdog_clk_freq = match clk_src {
             LfClockSource::LfXO(freq) => {
                 // Ensure Low Frequency XO is enabled
@@ -408,8 +405,7 @@ impl Clocks {
             }
             LfClockSource::UlfRco => {
                 // select ULF RCO
-                WDOG.ctrl()
-                    .modify(|w| w.set_clksel(Clksel::Ulfrco));
+                WDOG.ctrl().modify(|w| w.set_clksel(Clksel::Ulfrco));
 
                 DEFAULT_ULF_RCO_FREQUENCY
             }
@@ -423,7 +419,6 @@ impl Clocks {
 
     /// TODO:
     pub fn with_cryo_clk(self, clk_src: LfClockSource) -> Self {
-        
         let cryo_clk_freq = match clk_src {
             LfClockSource::LfXO(freq) => {
                 // Ensure Low Frequency XO is enabled
@@ -458,7 +453,6 @@ impl Clocks {
     }
 
     fn calculate_hf_clocks(hf_src_clk: u32) -> Self {
-        
         //  clock divider for the HFPERCLK (relative to HFCLK).
         let hf_clk_prescaler: u32 = CMU.hfpresc().read().presc().to_bits() as u32;
         let hf_clk_prescaler = hf_clk_prescaler + 1;
@@ -493,33 +487,32 @@ impl Clocks {
 
     /// Set to enable the clock for LE. Interface used for bus access to Low Energy peripherals.
     fn enable_hf_bus_clk_le(&self) {
-        
         // Enable High Frequency Clock LE
         CMU.hfbusclken0().modify(|w| w.set_le(true));
     }
 
     /// Enable Low Frequency XO
     fn enable_lfxo_clock(&self) {
-                // Ensure Low Frequency XO is enabled
-        if CMU.status().read().lfxoens() == false {
+        // Ensure Low Frequency XO is enabled
+        if !CMU.status().read().lfxoens() {
             CMU.oscencmd().write(|w| w.set_lfxoen(true));
         }
 
         // wait for LF XO clock to be stable
-        while CMU.status().read().lfxordy() == false {
+        while !CMU.status().read().lfxordy() {
             nop();
         }
     }
 
     /// Enable Low Frequency RCO
     fn enable_lfrco_clock(&self) {
-                // Ensure Low Frequency RCO is enabled
-        if CMU.status().read().lfrcoens() == false {
+        // Ensure Low Frequency RCO is enabled
+        if !CMU.status().read().lfrcoens() {
             CMU.oscencmd().write(|w| w.set_lfrcoen(true));
         }
 
         // wait for LF RCO clock to be stable
-        while CMU.status().read().lfrcordy() == false {
+        while !CMU.status().read().lfrcordy() {
             nop();
         }
     }

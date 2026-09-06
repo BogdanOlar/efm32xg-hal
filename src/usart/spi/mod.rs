@@ -18,10 +18,8 @@ use crate::{
     },
     usart::{mmio, spi::dma::SpiDma, UsartId},
 };
-use efm32xg_pac::usart::vals::{
-    Clkloc, Cshold, Cssetup, Databits, Parity, Rxloc, Stopbits, Txloc,
-};
 use core::cmp::max;
+use efm32xg_pac::usart::vals::{Clkloc, Cshold, Cssetup, Databits, Parity, Rxloc, Stopbits, Txloc};
 use embedded_hal::{
     digital::{InputPin, OutputPin},
     spi::{Error, ErrorKind, ErrorType, Mode, Phase, Polarity, SpiBus},
@@ -284,7 +282,7 @@ impl Spi {
         let mut bail_countdown = MAX_COUNT;
         let usart_p = mmio::usartx(self.id);
 
-        while usart_p.status().read().txc() == false {
+        while !usart_p.status().read().txc() {
             bail_countdown -= 1;
 
             if bail_countdown == 0 {
@@ -329,12 +327,7 @@ impl SpiPins {
     /// [`DynamicPin`]s and the [`UsartId`] is taken here, so the returned `SpiPins` is non-generic.
     /// SPI operating parameters (mode, baudrate, ...) are supplied separately via [`Config`] to
     /// [`Spi::new`].
-    pub fn new<PCLK, PTX, PRX>(
-        id: UsartId,
-        pin_clk: PCLK,
-        pin_tx: PTX,
-        pin_rx: PRX,
-    ) -> Self
+    pub fn new<PCLK, PTX, PRX>(id: UsartId, pin_clk: PCLK, pin_tx: PTX, pin_rx: PRX) -> Self
     where
         PCLK: OutputPin + UsartClkPin + PinInfo,
         PTX: OutputPin + UsartTxPin + PinInfo,
@@ -615,9 +608,7 @@ impl SpiBus<u8> for Spi {
                 None => &mut rx_discard,
             };
 
-            usart_p
-                .txdata()
-                .write(|w| w.set_txdata(tx_byte));
+            usart_p.txdata().write(|w| w.set_txdata(tx_byte));
 
             self.wait_tx_complete()?;
 
