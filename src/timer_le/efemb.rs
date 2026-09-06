@@ -8,7 +8,7 @@ use crate::gpio::{
     OutPp,
 };
 use crate::{
-    pac::{interrupt, CMU, Interrupt},
+    pac::{interrupt, Interrupt, CMU},
     timer_le::mmio::{self, Command, InterruptFlag},
 };
 use core::{
@@ -81,7 +81,7 @@ impl Ticker {
 
         #[cfg(feature = "efemb-timdrv-letim0-dbg-pins")]
         {
-            use crate::gpio::GPIO;
+            use crate::gpio::Gpio;
 
             let gpio = GPIO::new(crate::pac::GPIO);
 

@@ -128,7 +128,7 @@ pub mod pin;
 pub mod port;
 
 /// GPIO ports and their pins
-pub struct GPIO {
+pub struct Gpio {
     /// Port `A` configs for the entire port
     pub port_a: Port<'A'>,
     /// Port `B` configs for the entire port
@@ -249,13 +249,13 @@ pub struct GPIO {
     gpio_p: crate::pac::gpio::Gpio,
 }
 
-impl core::fmt::Debug for GPIO {
+impl core::fmt::Debug for Gpio {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         f.debug_struct("GPIO").finish_non_exhaustive()
     }
 }
 
-impl GPIO {
+impl Gpio {
     /// Create the GPIO HAL driver consuming the PAC peripheral
     pub fn new(gpio_p: crate::pac::gpio::Gpio) -> Self {
         let mut gpio = Self {
@@ -374,7 +374,7 @@ impl GPIO {
 
 /// Check if the GPIO peripheral's clock is enabled
 pub(crate) fn is_enabled() -> bool {
-    crate::pac::CMU.hfbusclken0().read().gpio() == true
+    crate::pac::CMU.hfbusclken0().read().gpio()
 }
 
 /// GPIO module errors

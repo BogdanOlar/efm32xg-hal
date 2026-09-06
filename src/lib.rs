@@ -38,7 +38,7 @@ pub mod prelude {
                 OutOdPuFiltAlt, OutOs, OutOsPd, OutPp, OutPpAlt,
             },
             port::{DataInCtrl, DriveStrength},
-            GPIO, GpioError,
+            Gpio, GpioError,
         },
         usart::spi::{BitOrder, Config, Spi, SpiError, SpiPins},
     };

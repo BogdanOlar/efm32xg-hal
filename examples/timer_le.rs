@@ -8,7 +8,7 @@ use efm32xg_hal::{
     cmu::{CmuExt, LfClockSource},
     gpio::{Gpio, OutPp},
     pac,
-    timer::{TimerDivider, TimerExt},
+    timer::{Timer, TimerDivider},
     timer_le::LeTimerExt,
 };
 
@@ -31,7 +31,7 @@ fn main() -> ! {
 
     let mut pin_delay = gpio.pd14.into_mode::<OutPp>();
 
-    let timer = p.timer0.into_timer(TimerDivider::Div1024);
+    let timer = Timer::new(pac::TIMER0, TimerDivider::Div1024);
     let (tim0ch0, _tim0ch1, _tim0ch2, _tim0ch3) = timer.into_channels();
     let mut delayer = tim0ch0.into_delay(&clocks);
     println!("{}", &delayer);

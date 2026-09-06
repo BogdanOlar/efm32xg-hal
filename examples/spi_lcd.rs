@@ -9,7 +9,7 @@ use efm32xg_hal::{
     cmu::{CmuExt, HfClockPrescaler, HfClockSource},
     gpio::{Gpio, InFilt, OutPp},
     pac,
-    timer::{TimerDivider, TimerExt},
+    timer::{Timer, TimerDivider},
     usart::spi::{Config, Spi, SpiPins},
 };
 
@@ -55,7 +55,7 @@ fn main() -> ! {
     let mut disp = Ls013b7dh03::new(spi, cs, led0, &mut buffer);
 
     let (tim0ch0, tim0ch1, _tim0ch2, _tim0ch3) =
-        p.timer0.into_timer(TimerDivider::Div1024).into_channels();
+        Timer::new(pac::TIMER0, TimerDivider::Div1024).into_channels();
 
     let mut com_inv = tim0ch1.into_pwm(disp_com);
     let _ret_pwm = com_inv.set_duty_cycle(10);

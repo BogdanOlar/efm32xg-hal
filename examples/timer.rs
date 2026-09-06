@@ -8,7 +8,7 @@ use efm32xg_hal::{
     cmu::CmuExt,
     gpio::{Gpio, OutPp},
     pac,
-    timer::{TimerDivider, TimerExt},
+    timer::{Timer, TimerDivider},
 };
 
 use embedded_hal::{delay::DelayNs, digital::StatefulOutputPin, pwm::SetDutyCycle};
@@ -23,12 +23,11 @@ use defmt_rtt as _;
 #[entry]
 fn main() -> ! {
     let _core_p = cortex_m::Peripherals::take().unwrap();
-    let p = pac::Peripherals::take().unwrap();
-    let clocks = p.cmu.split();
-    let gpio = Gpio::new(p.gpio);
+    let clocks = pac::CMU.split();
+    let gpio = Gpio::new(pac::GPIO);
     let mut pin_delay = gpio.pd14.into_mode::<OutPp>();
     let pin_pwm = gpio.pd13.into_mode::<OutPp>();
-    let timer = p.timer0.into_timer(TimerDivider::Div1024);
+    let timer = Timer::new(pac::TIMER0, TimerDivider::Div1024);
     let (tim0ch0, tim0ch1, _tim0ch2, _tim0ch3) = timer.into_channels();
 
     let mut pwm = tim0ch1.into_pwm(pin_pwm);

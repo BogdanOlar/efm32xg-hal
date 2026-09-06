@@ -1,66 +1,46 @@
 //! Timer/Counter
 //!
 
-use crate::{cmu::Clocks, gpio::pin::Pin};
-use core::{convert::Infallible, marker::PhantomData};
-pub use efm32xg_pac::timer::vals::Presc as TimerDivider;
-use efm32xg_pac::{
-    timer::vals::{
-        Cc0CtrlCmoa, Cc0CtrlIcedge, Cc0CtrlMode, Cc0loc, Cc1loc, Cc2loc, Cc3loc, CtrlMode,
+pub use crate::pac::timer::vals::Presc as TimerDivider;
+use crate::{
+    cmu::Clocks,
+    gpio::pin::Pin,
+    pac::{
+        timer::vals::{
+            Cc0CtrlCmoa, Cc0CtrlIcedge, Cc0CtrlMode, Cc0loc, Cc1loc, Cc2loc, Cc3loc, CtrlMode,
+        },
+        CMU, TIMER0, TIMER1,
     },
-    CMU, TIMER0, TIMER1,
 };
+use core::{convert::Infallible, marker::PhantomData};
 use embedded_hal::{
     delay::DelayNs,
     digital::OutputPin,
     pwm::{ErrorType, SetDutyCycle},
 };
 
-/// Extension trait for Timer PAC peripherals
+/// Reconstruct the chiptool PAC timer handle from its base address.
 ///
-/// Because the chiptool-generated PAC exposes `TIMER0` and `TIMER1` as `pub const` instances of the
-/// same `efm32xg_pac::timer::Timer` type, this trait is parameterised by the const generic `TN`:
-/// `TimerExt<0>` is implemented for the `TIMER0` instance and `TimerExt<1>` for `TIMER1`. The
-/// desired timer number must be disambiguated at the call site, e.g. via a return type annotation
-/// such as `let t: Timer<0> = pac::TIMER0.into_timer(div);`.
-pub trait TimerExt<const TN: u8> {
-    /// Convert PAC peripheral to HAL Timer struct
-    fn into_timer(self, clock_divider: TimerDivider) -> crate::timer::Timer<TN>;
-}
-
-impl TimerExt<0> for efm32xg_pac::timer::Timer {
-    fn into_timer(self, clock_divider: TimerDivider) -> crate::timer::Timer<0> {
-        crate::timer::Timer::<0>::new(clock_divider)
-    }
-}
-
-impl TimerExt<1> for efm32xg_pac::timer::Timer {
-    fn into_timer(self, clock_divider: TimerDivider) -> crate::timer::Timer<1> {
-        crate::timer::Timer::<1>::new(clock_divider)
-    }
-}
-
-/// Get the register block of one of the two timers, specified by `TN` (either `TIMER0`, or `TIMER1`)
-const fn timerx<const TN: u8>() -> efm32xg_pac::timer::Timer {
-    match TN {
-        0 => TIMER0,
-        1 => TIMER1,
-        _ => unreachable!(),
-    }
+/// `crate::pac::timer::Timer` is a `Copy` pointer wrapper, so the HAL stores only the pointer
+/// value and rebuilds the handle on demand. This keeps the driver non-generic while still
+/// addressing the right `TIMERn` instance.
+#[inline(always)]
+const fn pac_timer(peri_ptr: usize) -> crate::pac::timer::Timer {
+    unsafe { crate::pac::timer::Timer::from_ptr(peri_ptr as *mut ()) }
 }
 
 /// Timer
 #[derive(Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub struct Timer<const TN: u8> {}
+pub struct Timer {
+    peri_ptr: usize,
+}
 
-impl<const TN: u8> Timer<TN> {
+impl Timer {
     /// FIXME: take a (timer counter) frequency as parameter and do a best effort to set the timer prescaler and the
     ///        `top` value to get as close as possible
-    fn new(clock_divider: TimerDivider) -> Self {
-        let timer = timerx::<TN>();
-
-        timer.ctrl().write(|w| {
+    pub fn new(peri: crate::pac::timer::Timer, clock_divider: TimerDivider) -> Self {
+        peri.ctrl().write(|w| {
             w.set_presc(clock_divider);
             w.set_mode(CtrlMode::Up);
         });
@@ -68,36 +48,42 @@ impl<const TN: u8> Timer<TN> {
         // Set the resolution of the counter to MAX - 1 because if the timer is going to be split into channels and
         // any of them is used as PWM, we need to allow the PWM channel to set its compare value to TOP + 1 in order
         // to achieve 100% duty cycle
-        timer.top().write(|w| w.set_top(u16::MAX - 1));
+        peri.top().write(|w| w.set_top(u16::MAX - 1));
 
-        Self {}
+        Self {
+            peri_ptr: peri.as_ptr() as usize,
+        }
     }
 
     /// Split the timer into channels which may be specialised for various uses (delay, pwm, etc.)
     pub fn into_channels(
         self,
     ) -> (
-        TimerChannel<TN, 0>,
-        TimerChannel<TN, 1>,
-        TimerChannel<TN, 2>,
-        TimerChannel<TN, 3>,
+        TimerChannel<0>,
+        TimerChannel<1>,
+        TimerChannel<2>,
+        TimerChannel<3>,
     ) {
-        // enable Timer<TN> peripheral clock
-        match TN {
-            0 => CMU.hfperclken0().modify(|w| w.set_timer0(true)),
-            1 => CMU.hfperclken0().modify(|w| w.set_timer1(true)),
-            _ => unreachable!(),
+        // Enable the timer peripheral clock. The two instances share a register block type, so
+        // pick the clock-enable bit from the peripheral's address.
+        let peri_ptr = self.peri_ptr;
+        if peri_ptr == TIMER0.as_ptr() as usize {
+            CMU.hfperclken0().modify(|w| w.set_timer0(true));
+        } else if peri_ptr == TIMER1.as_ptr() as usize {
+            CMU.hfperclken0().modify(|w| w.set_timer1(true));
+        } else {
+            unreachable!();
         }
 
         // Enable timer
-        timerx::<TN>().cmd().write(|w| w.set_start(true));
+        pac_timer(peri_ptr).cmd().write(|w| w.set_start(true));
 
         // Split the peripheral into its channels
         (
-            TimerChannel {},
-            TimerChannel {},
-            TimerChannel {},
-            TimerChannel {},
+            TimerChannel { peri_ptr },
+            TimerChannel { peri_ptr },
+            TimerChannel { peri_ptr },
+            TimerChannel { peri_ptr },
         )
     }
 }
@@ -105,15 +91,17 @@ impl<const TN: u8> Timer<TN> {
 /// Timer channel
 #[derive(Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub struct TimerChannel<const TN: u8, const CN: u8> {}
+pub struct TimerChannel<const CN: u8> {
+    peri_ptr: usize,
+}
 
-impl<const TN: u8, const CN: u8> TimerChannel<TN, CN> {
+impl<const CN: u8> TimerChannel<CN> {
     /// Convert timer channel to a PWM
-    pub fn into_pwm<PIN>(self, pin: PIN) -> TimerChannelPwm<TN, CN, PIN>
+    pub fn into_pwm<PIN>(self, pin: PIN) -> TimerChannelPwm<CN, PIN>
     where
         PIN: OutputPin + TimerPin<CN>,
     {
-        let timer = timerx::<TN>();
+        let timer = pac_timer(self.peri_ptr);
 
         match CN {
             0 => {
@@ -164,13 +152,14 @@ impl<const TN: u8, const CN: u8> TimerChannel<TN, CN> {
         }
 
         TimerChannelPwm {
+            peri_ptr: self.peri_ptr,
             _pwm_pin: PhantomData,
         }
     }
 
     /// Convert timer to a Delay
-    pub fn into_delay(self, clocks: &Clocks) -> TimerChannelDelay<TN, CN> {
-        let timer = timerx::<TN>();
+    pub fn into_delay(self, clocks: &Clocks) -> TimerChannelDelay<CN> {
+        let timer = pac_timer(self.peri_ptr);
         let timer_div: u8 = timer.ctrl().read().presc().to_bits();
         let timer_freq = clocks.hf_per_clk() / (timer_div + 1) as u32;
 
@@ -190,18 +179,22 @@ impl<const TN: u8, const CN: u8> TimerChannel<TN, CN> {
             _ => unreachable!(),
         };
 
-        TimerChannelDelay { timer_freq }
+        TimerChannelDelay {
+            peri_ptr: self.peri_ptr,
+            timer_freq,
+        }
     }
 }
 
 /// Specialize the timer channel to be used for delays
 #[derive(Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub struct TimerChannelDelay<const TN: u8, const CN: u8> {
+pub struct TimerChannelDelay<const CN: u8> {
+    peri_ptr: usize,
     timer_freq: u32,
 }
 
-impl<const TN: u8, const CN: u8> DelayNs for TimerChannelDelay<TN, CN> {
+impl<const CN: u8> DelayNs for TimerChannelDelay<CN> {
     fn delay_ns(&mut self, ns: u32) {
         let microsecs = ns / 1000;
 
@@ -213,7 +206,7 @@ impl<const TN: u8, const CN: u8> DelayNs for TimerChannelDelay<TN, CN> {
         //        A better accuracy may be obtained if we implement `DelayNs` for `Timer` instead of `TimerChannelDelay`
         //        since we can control when the timer starts.
         if microsecs > 0 {
-            let timer = timerx::<TN>();
+            let timer = pac_timer(self.peri_ptr);
             let ticks_left = self.timer_freq as u64 * microsecs as u64 / 1_000_000_u64;
             let reload_max = timer.top().read().top() as u32;
             let reference_count = timer.cnt().read().cnt() as u32;
@@ -229,9 +222,7 @@ impl<const TN: u8, const CN: u8> DelayNs for TimerChannelDelay<TN, CN> {
                         timer.ifc().write(|w| w.set_cc0(true));
 
                         // set compare
-                        timer
-                            .cc0_ccv()
-                            .write(|w| w.set_ccv(compare as u16));
+                        timer.cc0_ccv().write(|w| w.set_ccv(compare as u16));
 
                         // enable channel interrupt
                         timer.ien().write(|w| w.set_cc0(true));
@@ -241,9 +232,7 @@ impl<const TN: u8, const CN: u8> DelayNs for TimerChannelDelay<TN, CN> {
                         timer.ifc().write(|w| w.set_cc1(true));
 
                         // set compare
-                        timer
-                            .cc1_ccv()
-                            .write(|w| w.set_ccv(compare as u16));
+                        timer.cc1_ccv().write(|w| w.set_ccv(compare as u16));
 
                         // enable channel interrupt
                         timer.ien().write(|w| w.set_cc1(true));
@@ -253,9 +242,7 @@ impl<const TN: u8, const CN: u8> DelayNs for TimerChannelDelay<TN, CN> {
                         timer.ifc().write(|w| w.set_cc2(true));
 
                         // set compare
-                        timer
-                            .cc2_ccv()
-                            .write(|w| w.set_ccv(compare as u16));
+                        timer.cc2_ccv().write(|w| w.set_ccv(compare as u16));
 
                         // enable channel interrupt
                         timer.ien().write(|w| w.set_cc2(true));
@@ -265,9 +252,7 @@ impl<const TN: u8, const CN: u8> DelayNs for TimerChannelDelay<TN, CN> {
                         timer.ifc().write(|w| w.set_cc3(true));
 
                         // set compare
-                        timer
-                            .cc3_ccv()
-                            .write(|w| w.set_ccv(compare as u16));
+                        timer.cc3_ccv().write(|w| w.set_ccv(compare as u16));
 
                         // enable channel interrupt
                         timer.ien().write(|w| w.set_cc3(true));
@@ -281,10 +266,10 @@ impl<const TN: u8, const CN: u8> DelayNs for TimerChannelDelay<TN, CN> {
                 compare = (reference_count + reload) % reload_max;
 
                 match CN {
-                    0 => while timer.if_().read().cc0() == false {},
-                    1 => while timer.if_().read().cc1() == false {},
-                    2 => while timer.if_().read().cc2() == false {},
-                    3 => while timer.if_().read().cc3() == false {},
+                    0 => while !timer.if_().read().cc0() {},
+                    1 => while !timer.if_().read().cc1() {},
+                    2 => while !timer.if_().read().cc2() {},
+                    3 => while !timer.if_().read().cc3() {},
                     _ => unreachable!(),
                 }
             }
@@ -295,24 +280,29 @@ impl<const TN: u8, const CN: u8> DelayNs for TimerChannelDelay<TN, CN> {
 /// PWM
 #[derive(Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub struct TimerChannelPwm<const TN: u8, const CN: u8, PIN>
+pub struct TimerChannelPwm<const CN: u8, PIN>
 where
     PIN: OutputPin + TimerPin<CN>,
 {
+    peri_ptr: usize,
     _pwm_pin: PhantomData<PIN>,
 }
 
-impl<const TN: u8, const CN: u8, PIN> SetDutyCycle for TimerChannelPwm<TN, CN, PIN>
+impl<const CN: u8, PIN> SetDutyCycle for TimerChannelPwm<CN, PIN>
 where
     PIN: OutputPin + TimerPin<CN>,
 {
     fn max_duty_cycle(&self) -> u16 {
         // A 100% duty cycle is obtained by setting the channel Capture/Compare value to `top + 1`
-        timerx::<TN>().top().read().top().saturating_add(1)
+        pac_timer(self.peri_ptr)
+            .top()
+            .read()
+            .top()
+            .saturating_add(1)
     }
 
     fn set_duty_cycle(&mut self, duty: u16) -> Result<(), Self::Error> {
-        let timer = timerx::<TN>();
+        let timer = pac_timer(self.peri_ptr);
 
         match CN {
             0 => timer.cc0_ccvb().write(|w| w.set_ccvb(duty)),
@@ -326,7 +316,7 @@ where
     }
 }
 
-impl<const TN: u8, const CN: u8, PIN> ErrorType for TimerChannelPwm<TN, CN, PIN>
+impl<const CN: u8, PIN> ErrorType for TimerChannelPwm<CN, PIN>
 where
     PIN: OutputPin + TimerPin<CN>,
 {
@@ -340,6 +330,8 @@ pub trait TimerPin<const CN: u8> {
 }
 
 /// Implement pin location trait for each of the timer channels and their sets of 32 pins
+///
+/// (timer_channel, loc, port, pin)
 macro_rules! impl_timer_channel_loc {
     ($channel:literal, $loc:literal, $port:literal, $pin:literal) => {
         impl<ANY> TimerPin<$channel> for Pin<$port, $pin, ANY> {

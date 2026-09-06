@@ -14,7 +14,7 @@ mod tests {
         crc::{algos::CRC_32_CKSUM, Crc, CrcDriver},
         dma::descriptor::Descriptor,
         dma::Dma,
-        gpio::{GPIO, InFilt, OutPp},
+        gpio::{Gpio, InFilt, OutPp},
         usart::spi::{BitOrder, Config, Spi, SpiPins},
         usart::UsartId,
     };
@@ -46,7 +46,7 @@ mod tests {
     #[init]
     fn init() -> (Spi, Crc<u32>, Dma) {
         let crc = CrcDriver::new(efm32xg_hal::pac::GPCRC).into_algo_32(&CRC_32_CKSUM);
-        let gpio = GPIO::new(efm32xg_hal::pac::GPIO);
+        let gpio = Gpio::new(efm32xg_hal::pac::GPIO);
         let spi = Spi::new(
             SpiPins::new(
                 UsartId::USART0,
