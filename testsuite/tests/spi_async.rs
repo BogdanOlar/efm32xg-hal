@@ -91,7 +91,7 @@ mod tests {
         let _clocks = Cmu::new(p.Cmu).with_lfa_clk(LfClockSource::LfRco).freeze();
         Ticker::init();
 
-        let crc = CrcDriver::new(efm32xg_hal::pac::GPCRC).into_algo_32(&CRC_32_CKSUM);
+        let crc = CrcDriver::new(p.Gpcrc).into_algo_32(&CRC_32_CKSUM);
         let gpio = Gpio::new(p.Gpio);
         let dma = Dma::init(p.Ldma);
         let spi = efm32xg_hal::usart::spi::Spi::new(

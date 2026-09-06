@@ -46,7 +46,7 @@ mod tests {
     #[init]
     fn init() -> (Spi<'static, Usart0>, Crc<u32>, Dma) {
         let p = efm32xg_hal::efm32_init();
-        let crc = CrcDriver::new(efm32xg_hal::pac::GPCRC).into_algo_32(&CRC_32_CKSUM);
+        let crc = CrcDriver::new(p.Gpcrc).into_algo_32(&CRC_32_CKSUM);
         let gpio = Gpio::new(p.Gpio);
         let spi = Spi::new(
             SpiPins::new(

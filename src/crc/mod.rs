@@ -38,26 +38,19 @@
 pub mod algos;
 pub mod mmio;
 
-use crate::pac::gpcrc::Gpcrc;
-
 /// Cyclic Redundancy Check driver
+#[derive(Debug)]
 pub struct CrcDriver {
-    p: Gpcrc,
-}
-
-impl core::fmt::Debug for CrcDriver {
-    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-        f.debug_struct("CrcDriver").finish_non_exhaustive()
-    }
+    _peri: embassy_hal_internal::Peri<'static, crate::peripherals::Gpcrc>,
 }
 
 impl CrcDriver {
-    /// Create the CRC driver
-    pub fn new(p: Gpcrc) -> Self {
+    /// Create the CRC driver, consuming the GPCRC peripheral singleton.
+    pub fn new(peri: embassy_hal_internal::Peri<'static, crate::peripherals::Gpcrc>) -> Self {
         // Enable CRC clock
         crate::pac::CMU.hfbusclken0().modify(|w| w.set_gpcrc(true));
 
-        Self { p }
+        Self { _peri: peri }
     }
 
     /// Create a CRC-16 algo
@@ -88,12 +81,12 @@ impl CrcDriver {
         }
     }
 
-    /// Destroy the CRC driver and release the GPCRC peripheral
-    pub fn release(self) -> Gpcrc {
+    /// Destroy the CRC driver and release the GPCRC peripheral singleton
+    pub fn release(self) -> embassy_hal_internal::Peri<'static, crate::peripherals::Gpcrc> {
         // Disable CRC clock
         crate::pac::CMU.hfbusclken0().modify(|w| w.set_gpcrc(false));
 
-        self.p
+        self._peri
     }
 }
 

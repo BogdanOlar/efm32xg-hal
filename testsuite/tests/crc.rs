@@ -11,7 +11,8 @@ mod tests {
 
     #[init]
     fn init() -> CrcDriver {
-        CrcDriver::new(efm32xg_hal::pac::GPCRC)
+        let p = efm32xg_hal::efm32_init();
+        CrcDriver::new(p.Gpcrc)
     }
 
     /// Test the HAL CRC-16 algos against the `crc` crate algos

@@ -30,7 +30,7 @@ fn main() -> ! {
 }
 
 fn transfer_u8_dma_short_asymmetric_rx_longer(p: Peripherals) {
-    let crc = CrcDriver::new(pac::GPCRC).into_algo_32(&CRC_32_CKSUM);
+    let crc = CrcDriver::new(p.Gpcrc).into_algo_32(&CRC_32_CKSUM);
     let gpio = Gpio::new(p.Gpio);
     let mut spi = Spi::new(
         SpiPins::new(
@@ -83,7 +83,7 @@ fn transfer_u8_dma_short_asymmetric_rx_longer(p: Peripherals) {
 /// SPI transfer uses more than one descriptor for both TX and RX
 /// TX and RX slices have the same size
 fn transfer_u8_dma_long_symmetric(p: Peripherals) {
-    let crc = CrcDriver::new(pac::GPCRC).into_algo_32(&CRC_32_CKSUM);
+    let crc = CrcDriver::new(p.Gpcrc).into_algo_32(&CRC_32_CKSUM);
     let gpio = Gpio::new(p.Gpio);
     let mut spi = Spi::new(
         SpiPins::new(
