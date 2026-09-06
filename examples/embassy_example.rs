@@ -2,7 +2,7 @@
 #![no_std]
 
 use efm32xg_hal::{
-    cmu::{CmuExt, HfClockPrescaler, HfClockSource, LfClockSource},
+    cmu::{Cmu, HfClockPrescaler, HfClockSource, LfClockSource},
     efm32_init,
     prelude::*,
     timer_le::efemb::Ticker,
@@ -17,13 +17,11 @@ const TASK_COUNT: usize = 10;
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
     let p = efm32_init();
-    let clocks = p
-        .Cmu
-        .split()
+    let clocks = Cmu::new(p.Cmu)
         // Prescaling the HF clock to the lowest frequency possible, to stress test the scheduler algorithm
         // .with_hf_clk(HfClockSource::HfRco, HfClockPrescaler::Div32)
         // .with_hf_clk(HfClockSource::HfXO(40_000_000), HfClockPrescaler::Div1);
-        .with_hf_clk(HfClockSource::HfRco, HfClockPrescaler::Div1);
+        .with_hf_clk(HfClockSource::HfRco, HfClockPrescaler::Div1).freeze();
 
     // Make sure LfAClk is enabled otherwise the LeTimer0 Ticker won't work
     #[cfg(feature = "efemb-timdrv-letim0-hz-32_768")]

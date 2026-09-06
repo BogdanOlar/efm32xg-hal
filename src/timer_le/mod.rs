@@ -35,7 +35,7 @@ pub trait LeTimerExt {
 }
 
 impl Sealed for peripherals::Letimer {}
-impl LeTimerExt for peripherals::Letimer {
+impl LeTimerExt for embassy_hal_internal::Peri<'_, peripherals::Letimer> {
     type Timer = LeTimer;
     fn into_timer(self) -> Self::Timer {
         Self::Timer::new()

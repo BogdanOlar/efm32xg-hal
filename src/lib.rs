@@ -40,7 +40,7 @@ embassy_hal_internal::peripherals!(
     Letimer, Leuart, Pcnt, Wdog, Msc, Fpueh, Ldma, Emu, Cmu, Rmu, Prs, Crypto,
 );
 
-pub use embassy_hal_internal::{Peripheral, PeripheralRef};
+pub use embassy_hal_internal::{Peri, PeripheralType};
 
 /// Initialize the HAL and return the peripheral singletons.
 ///
@@ -55,7 +55,7 @@ pub fn efm32_init() -> Peripherals {
 /// Convenience module which exports the most used types for each module
 pub mod prelude {
     pub use crate::{
-        cmu::{CmuExt, HfClockPrescaler, HfClockSource, LfClockSource},
+        cmu::{Cmu, HfClockPrescaler, HfClockSource, LfClockSource},
         gpio::{
             pin::mode::{
                 Analog, Disabled, DisabledPu, InFilt, InFloat, InPd, InPdFilt, InPu, InPuFilt,

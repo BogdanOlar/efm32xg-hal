@@ -44,7 +44,7 @@ mod tests {
     };
 
     #[init]
-    fn init() -> (Spi<'static, Usart0>, Crc<u32>, Dma<'static>) {
+    fn init() -> (Spi<'static, Usart0>, Crc<u32>, Dma) {
         let p = efm32xg_hal::efm32_init();
         let crc = CrcDriver::new(efm32xg_hal::pac::GPCRC).into_algo_32(&CRC_32_CKSUM);
         let gpio = Gpio::new(p.Gpio);
@@ -63,7 +63,7 @@ mod tests {
 
     #[test]
     #[timeout(5)]
-    fn transfer_u8_sync((mut spi, crc, _dma): (Spi<'static, Usart0>, Crc<u32>, Dma<'static>)) {
+    fn transfer_u8_sync((mut spi, crc, _dma): (Spi<'static, Usart0>, Crc<u32>, Dma)) {
         // Set the `dst` length to a multiple of 1
         let mut dst_buf: [u8; Descriptor::MAX_TRANSFER_UNITS] = [0; _];
         let dst_len = dst_buf.len();
@@ -75,7 +75,7 @@ mod tests {
 
     #[test]
     #[timeout(5)]
-    fn transfer_u8_sync_tx_desc_1_rx_1((mut spi, crc, _dma): (Spi<'static, Usart0>, Crc<u32>, Dma<'static>)) {
+    fn transfer_u8_sync_tx_desc_1_rx_1((mut spi, crc, _dma): (Spi<'static, Usart0>, Crc<u32>, Dma)) {
         // Size of slices which will be tested
         // TX
         const SRC_LEN: usize = Descriptor::MAX_TRANSFER_UNITS;
@@ -98,7 +98,7 @@ mod tests {
     /// verify that transfers still succeed.
     #[test]
     #[timeout(5)]
-    fn set_config_runtime((mut spi, crc, _dma): (Spi<'static, Usart0>, Crc<u32>, Dma<'static>)) {
+    fn set_config_runtime((mut spi, crc, _dma): (Spi<'static, Usart0>, Crc<u32>, Dma)) {
         let mut dst_buf: [u8; Descriptor::MAX_TRANSFER_UNITS] = [0; _];
         let dst_len = dst_buf.len();
         let src = &SRC_BUF;
@@ -127,7 +127,7 @@ mod tests {
     /// via [`Spi::set_config`]) does not break the transfer path.
     #[test]
     #[timeout(5)]
-    fn bit_order((mut spi, crc, _dma): (Spi<'static, Usart0>, Crc<u32>, Dma<'static>)) {
+    fn bit_order((mut spi, crc, _dma): (Spi<'static, Usart0>, Crc<u32>, Dma)) {
         let mut dst_buf: [u8; Descriptor::MAX_TRANSFER_UNITS] = [0; _];
         let dst_len = dst_buf.len();
         let src = &SRC_BUF;

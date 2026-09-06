@@ -20,7 +20,7 @@ async fn main(spawner: Spawner) {
     let p = efm32_init();
 
     // Initialize the embassy time driver in order to get logging timestamps (LfAClk is ncecessary for LeTimer0)
-    let _clocks = p.Cmu.split().with_lfa_clk(LfClockSource::LfRco);
+    let _clocks = Cmu::new(p.Cmu).with_lfa_clk(LfClockSource::LfRco).freeze();
     Ticker::init();
 
     // Initialize GPIO

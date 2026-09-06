@@ -5,7 +5,7 @@
 
 use cortex_m::asm::nop;
 use cortex_m_rt::entry;
-use efm32xg_hal::cmu::{CmuExt, DbgClockSource, HfClockPrescaler, HfClockSource};
+use efm32xg_hal::cmu::{Cmu, DbgClockSource, HfClockPrescaler, HfClockSource};
 use efm32xg_hal::{efm32_init, pac};
 
 // pick a panicking behavior
@@ -31,11 +31,10 @@ fn main() -> ! {
     }
     defmt::println!("Safe end");
 
-    let clocks = p
-        .Cmu
-        .split()
+    let clocks = Cmu::new(p.Cmu)
         .with_hf_clk(HfClockSource::HfRco, HfClockPrescaler::Div10)
-        .with_dbg_clk(DbgClockSource::HfClk);
+        .with_dbg_clk(DbgClockSource::HfClk)
+        .freeze();
 
     // FIXME: Core clock >= 25MHz require flash waitstates of at least `WS1` or `WS1SCBTP` set to `MSC_READCTRL.MODE`
     // let clocks = p

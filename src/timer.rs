@@ -13,8 +13,8 @@ use crate::{
     },
     peripherals, Sealed,
 };
-use core::{convert::Infallible, fmt, marker::PhantomData};
-use embassy_hal_internal::{Peripheral, PeripheralRef};
+use core::{convert::Infallible, marker::PhantomData};
+use embassy_hal_internal::Peri;
 use embedded_hal::{
     delay::DelayNs,
     digital::OutputPin,
@@ -28,7 +28,7 @@ use embedded_hal::{
 /// uninstantiable type obtained only from [`crate::efm32_init`], a timer peripheral cannot be
 /// driven by two [`Timer`] instances at once — the singleton is moved into the first driver and
 /// any second use fails to compile.
-pub trait TimerInstance: Sealed + Peripheral<P = Self> + 'static {
+pub trait TimerInstance: Sealed + embassy_hal_internal::PeripheralType + 'static {
     /// Returns the chiptool PAC register-block handle for this timer instance.
     fn regs() -> crate::pac::timer::Timer;
     /// Enables the HF peripheral clock for this timer instance.
@@ -56,27 +56,16 @@ impl TimerInstance for peripherals::Timer1 {
 }
 
 /// Timer
+#[derive(Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct Timer<'d, T: TimerInstance> {
-    peri: PeripheralRef<'d, T>,
-}
-
-impl<'d, T: TimerInstance> fmt::Debug for Timer<'d, T> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.debug_struct("Timer").finish_non_exhaustive()
-    }
-}
-
-#[cfg(feature = "defmt")]
-impl<'d, T: TimerInstance> defmt::Format for Timer<'d, T> {
-    fn format(&self, fmt: defmt::Formatter) {
-        defmt::write!(fmt, "Timer")
-    }
+    peri: Peri<'d, T>,
 }
 
 impl<'d, T: TimerInstance> Timer<'d, T> {
     /// FIXME: take a (timer counter) frequency as parameter and do a best effort to set the timer prescaler and the
     ///        `top` value to get as close as possible
-    pub fn new(peri: impl Peripheral<P = T> + 'd, clock_divider: TimerDivider) -> Self {
+    pub fn new(peri: Peri<'d, T>, clock_divider: TimerDivider) -> Self {
         let timer = T::regs();
 
         timer.ctrl().write(|w| {
@@ -90,7 +79,7 @@ impl<'d, T: TimerInstance> Timer<'d, T> {
         timer.top().write(|w| w.set_top(u16::MAX - 1));
 
         Self {
-            peri: peri.into_ref(),
+            peri: peri,
         }
     }
 
@@ -132,21 +121,10 @@ impl<'d, T: TimerInstance> Timer<'d, T> {
 }
 
 /// Timer channel
+#[derive(Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct TimerChannel<'d, T: TimerInstance, const CN: u8> {
-    peri: PeripheralRef<'d, T>,
-}
-
-impl<'d, T: TimerInstance, const CN: u8> fmt::Debug for TimerChannel<'d, T, CN> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.debug_struct("TimerChannel").finish_non_exhaustive()
-    }
-}
-
-#[cfg(feature = "defmt")]
-impl<'d, T: TimerInstance, const CN: u8> defmt::Format for TimerChannel<'d, T, CN> {
-    fn format(&self, fmt: defmt::Formatter) {
-        defmt::write!(fmt, "TimerChannel")
-    }
+    peri: Peri<'d, T>,
 }
 
 impl<'d, T: TimerInstance, const CN: u8> TimerChannel<'d, T, CN> {
@@ -241,24 +219,11 @@ impl<'d, T: TimerInstance, const CN: u8> TimerChannel<'d, T, CN> {
 }
 
 /// Specialize the timer channel to be used for delays
+#[derive(Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct TimerChannelDelay<'d, T: TimerInstance, const CN: u8> {
-    peri: PeripheralRef<'d, T>,
+    peri: Peri<'d, T>,
     timer_freq: u32,
-}
-
-impl<'d, T: TimerInstance, const CN: u8> fmt::Debug for TimerChannelDelay<'d, T, CN> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.debug_struct("TimerChannelDelay")
-            .field("timer_freq", &self.timer_freq)
-            .finish_non_exhaustive()
-    }
-}
-
-#[cfg(feature = "defmt")]
-impl<'d, T: TimerInstance, const CN: u8> defmt::Format for TimerChannelDelay<'d, T, CN> {
-    fn format(&self, fmt: defmt::Formatter) {
-        defmt::write!(fmt, "TimerChannelDelay")
-    }
 }
 
 impl<'d, T: TimerInstance, const CN: u8> DelayNs for TimerChannelDelay<'d, T, CN> {
@@ -345,31 +310,14 @@ impl<'d, T: TimerInstance, const CN: u8> DelayNs for TimerChannelDelay<'d, T, CN
 }
 
 /// PWM
+#[derive(Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct TimerChannelPwm<'d, T: TimerInstance, const CN: u8, PIN>
 where
     PIN: OutputPin + TimerPin<CN>,
 {
-    peri: PeripheralRef<'d, T>,
+    peri: Peri<'d, T>,
     _pwm_pin: PhantomData<PIN>,
-}
-
-impl<'d, T: TimerInstance, const CN: u8, PIN> fmt::Debug for TimerChannelPwm<'d, T, CN, PIN>
-where
-    PIN: OutputPin + TimerPin<CN>,
-{
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.debug_struct("TimerChannelPwm").finish_non_exhaustive()
-    }
-}
-
-#[cfg(feature = "defmt")]
-impl<'d, T: TimerInstance, const CN: u8, PIN> defmt::Format for TimerChannelPwm<'d, T, CN, PIN>
-where
-    PIN: OutputPin + TimerPin<CN>,
-{
-    fn format(&self, fmt: defmt::Formatter) {
-        defmt::write!(fmt, "TimerChannelPwm")
-    }
 }
 
 impl<'d, T: TimerInstance, const CN: u8, PIN> SetDutyCycle for TimerChannelPwm<'d, T, CN, PIN>

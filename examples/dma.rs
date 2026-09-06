@@ -30,7 +30,7 @@ fn main() -> ! {
     let dma = Dma::init(p.Ldma);
 
     // Initialize the embassy time driver (for defmt timestamps)
-    let _clocks = p.Cmu.split().with_lfa_clk(LfClockSource::LfRco);
+    let _clocks = Cmu::new(p.Cmu).with_lfa_clk(LfClockSource::LfRco).freeze();
     Ticker::init();
 
     let mut ch = dma.ch1;

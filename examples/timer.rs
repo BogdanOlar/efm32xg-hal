@@ -5,7 +5,7 @@
 
 use cortex_m_rt::entry;
 use efm32xg_hal::{
-    cmu::CmuExt,
+    cmu::Cmu,
     efm32_init,
     gpio::{Gpio, OutPp},
     timer::{Timer, TimerDivider},
@@ -26,7 +26,7 @@ fn main() -> ! {
     // `efm32_init` returns the peripheral singletons once; each `p.XXX` is moved into its driver,
     // so a second driver on the same instance would not compile.
     let p = efm32_init();
-    let clocks = p.Cmu.split();
+    let clocks = Cmu::new(p.Cmu).freeze();
     let gpio = Gpio::new(p.Gpio);
     let mut pin_delay = gpio.pd14.into_mode::<OutPp>();
     let pin_pwm = gpio.pd13.into_mode::<OutPp>();

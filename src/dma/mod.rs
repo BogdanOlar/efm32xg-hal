@@ -25,7 +25,7 @@ use crate::{
     pac::Interrupt,
     peripherals,
 };
-use embassy_hal_internal::{Peripheral, PeripheralRef};
+use embassy_hal_internal::{Peri, PeripheralType};
 #[cfg(feature = "debug-spi-dma-defmt-info")]
 use defmt::info;
 
@@ -37,49 +37,40 @@ pub type DmaResult = Result<(), DmaError>;
 
 /// DMA driver
 ///
-/// Holds the LDMA peripheral singleton (as a [`PeripheralRef`]) and exposes the eight DMA
-/// channels. Each [`DmaChannel`] clones the peripheral reference (via `clone_unchecked`) so it
-/// stays alive for as long as the channel exists, not just while the `Dma` struct is alive.
-pub struct Dma<'d> {
-    peri: PeripheralRef<'d, peripherals::Ldma>,
+/// Exposes the eight DMA channels. Each [`DmaChannel`] holds a copy of the LDMA peripheral
+/// singleton (a zero-sized type created via `steal()`), ensuring the peripheral ownership is
+/// tied to the channel's lifetime.
+#[derive(Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub struct Dma {
     /// DMA channel 0
-    pub ch0: DmaChannel<'d>,
+    pub ch0: DmaChannel,
     /// DMA channel 1
-    pub ch1: DmaChannel<'d>,
+    pub ch1: DmaChannel,
     /// DMA channel 2
-    pub ch2: DmaChannel<'d>,
+    pub ch2: DmaChannel,
     /// DMA channel 3
-    pub ch3: DmaChannel<'d>,
+    pub ch3: DmaChannel,
     /// DMA channel 4
-    pub ch4: DmaChannel<'d>,
+    pub ch4: DmaChannel,
     /// DMA channel 5
-    pub ch5: DmaChannel<'d>,
+    pub ch5: DmaChannel,
     /// DMA channel 6
-    pub ch6: DmaChannel<'d>,
+    pub ch6: DmaChannel,
     /// DMA channel 7
-    pub ch7: DmaChannel<'d>,
+    pub ch7: DmaChannel,
 }
 
-impl<'d> core::fmt::Debug for Dma<'d> {
-    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-        f.debug_struct("Dma").finish_non_exhaustive()
-    }
-}
-
-#[cfg(feature = "defmt")]
-impl<'d> defmt::Format for Dma<'d> {
-    fn format(&self, fmt: defmt::Formatter) {
-        defmt::write!(fmt, "Dma")
-    }
-}
-
-impl<'d> Dma<'d> {
+impl Dma {
     /// Initialize DMA, consuming the LDMA peripheral singleton.
     ///
-    /// The singleton (`[`peripherals::Ldma`]`, from [`crate::efm32_init`]) is moved in and held
-    /// by the returned `Dma` (and its channels) for their entire lifetime, so a second
-    /// `Dma::init` on the same peripheral cannot be called.
-    pub fn init(peri: impl Peripheral<P = peripherals::Ldma> + 'd) -> Self {
+    /// The singleton (`[`peripherals::Ldma`]`, from [`crate::efm32_init`]) is consumed so a
+    /// second `Dma::init` on the same peripheral cannot be called. Each channel gets its own
+    /// copy of the singleton (via `steal()`), tying peripheral ownership to the channel.
+    pub fn init(peri: Peri<'static, peripherals::Ldma>) -> Self {
+        // Consume the peripheral singleton.
+        let _ = peri;
+
         // Enable DMA clock
         crate::pac::CMU.hfbusclken0().modify(|w| w.set_ldma(true));
 
@@ -87,53 +78,37 @@ impl<'d> Dma<'d> {
             cortex_m::peripheral::NVIC::unmask(Interrupt::LDMA);
         }
 
-        let peri = peri.into_ref();
-
         // SAFETY: each channel operates on a distinct LDMA channel register set; the
-        // PeripheralRef clones are disjoint by channel number.
+        // stolen singletons are disjoint by channel number.
         Self {
-            ch0: DmaChannel::new(ChannelId::Ch0, unsafe { peri.clone_unchecked() }),
-            ch1: DmaChannel::new(ChannelId::Ch1, unsafe { peri.clone_unchecked() }),
-            ch2: DmaChannel::new(ChannelId::Ch2, unsafe { peri.clone_unchecked() }),
-            ch3: DmaChannel::new(ChannelId::Ch3, unsafe { peri.clone_unchecked() }),
-            ch4: DmaChannel::new(ChannelId::Ch4, unsafe { peri.clone_unchecked() }),
-            ch5: DmaChannel::new(ChannelId::Ch5, unsafe { peri.clone_unchecked() }),
-            ch6: DmaChannel::new(ChannelId::Ch6, unsafe { peri.clone_unchecked() }),
-            ch7: DmaChannel::new(ChannelId::Ch7, unsafe { peri.clone_unchecked() }),
-            peri,
+            ch0: DmaChannel::new(ChannelId::Ch0, unsafe { *peripherals::Ldma::steal() }),
+            ch1: DmaChannel::new(ChannelId::Ch1, unsafe { *peripherals::Ldma::steal() }),
+            ch2: DmaChannel::new(ChannelId::Ch2, unsafe { *peripherals::Ldma::steal() }),
+            ch3: DmaChannel::new(ChannelId::Ch3, unsafe { *peripherals::Ldma::steal() }),
+            ch4: DmaChannel::new(ChannelId::Ch4, unsafe { *peripherals::Ldma::steal() }),
+            ch5: DmaChannel::new(ChannelId::Ch5, unsafe { *peripherals::Ldma::steal() }),
+            ch6: DmaChannel::new(ChannelId::Ch6, unsafe { *peripherals::Ldma::steal() }),
+            ch7: DmaChannel::new(ChannelId::Ch7, unsafe { *peripherals::Ldma::steal() }),
         }
     }
 }
 
 /// DMA channel singleton
 ///
-/// Each channel holds a [`PeripheralRef`] to the LDMA peripheral, ensuring the peripheral
-/// singleton stays alive for as long as the channel does.
-pub struct DmaChannel<'d> {
-    /// LDMA peripheral reference (ownership token)
-    _peri: PeripheralRef<'d, peripherals::Ldma>,
+/// Each channel holds a copy of the LDMA peripheral singleton (a zero-sized type), ensuring
+/// the peripheral ownership is tied to the channel's lifetime.
+#[derive(Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub struct DmaChannel {
+    /// LDMA peripheral singleton (ownership token)
+    _peri: peripherals::Ldma,
     /// Channel ID
     id: ChannelId,
 }
 
-impl<'d> core::fmt::Debug for DmaChannel<'d> {
-    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-        f.debug_struct("DmaChannel")
-            .field("id", &self.id)
-            .finish_non_exhaustive()
-    }
-}
-
-#[cfg(feature = "defmt")]
-impl<'d> defmt::Format for DmaChannel<'d> {
-    fn format(&self, fmt: defmt::Formatter) {
-        defmt::write!(fmt, "DmaChannel({})", self.id as u8)
-    }
-}
-
-impl<'d> DmaChannel<'d> {
-    /// Create a new DMA channel with the given ID and peripheral reference.
-    pub(crate) fn new(id: ChannelId, peri: PeripheralRef<'d, peripherals::Ldma>) -> Self {
+impl DmaChannel {
+    /// Create a new DMA channel with the given ID and peripheral singleton.
+    pub(crate) fn new(id: ChannelId, peri: peripherals::Ldma) -> Self {
         Self { _peri: peri, id }
     }
 
@@ -315,7 +290,7 @@ impl<'d> DmaChannel<'d> {
         desc: &TransferDescriptor,
         with_sw_trigger: bool,
         params: P,
-    ) -> Result<ChannelTransfer<'tl, 'd, P>, DmaError> {
+    ) -> Result<ChannelTransfer<'tl, P>, DmaError> {
         // cancel any on-going transfers
         self.cancel();
 
@@ -343,7 +318,7 @@ impl<'d> DmaChannel<'d> {
     pub(crate) fn dummy_peripheral_transfer<'tl, P: TransferParams<'tl>>(
         &'tl mut self,
         params: P,
-    ) -> Result<ChannelTransfer<'tl, 'd, P>, DmaError> {
+    ) -> Result<ChannelTransfer<'tl, P>, DmaError> {
         // cancel any on-going transfers
         self.cancel();
 
@@ -404,7 +379,7 @@ impl<'d> DmaChannel<'d> {
         &'tl mut self,
         src: &'tl [Word],
         dst: &'tl mut [Word],
-    ) -> Result<ChannelTransfer<'tl, 'd, MemoryTransferParams<'tl, Word>>, DmaError> {
+    ) -> Result<ChannelTransfer<'tl, MemoryTransferParams<'tl, Word>>, DmaError> {
         if src.len() != dst.len() {
             return Err(DmaError::BufferMismatch);
         }

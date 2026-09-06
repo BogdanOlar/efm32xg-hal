@@ -5,7 +5,7 @@
 
 use cortex_m_rt::entry;
 use efm32xg_hal::{
-    cmu::{CmuExt, LfClockSource},
+    cmu::{Cmu, LfClockSource},
     efm32_init,
     gpio::{Gpio, OutPp},
     timer::{Timer, TimerDivider},
@@ -25,7 +25,7 @@ use defmt_rtt as _;
 fn main() -> ! {
     let _core_p = cortex_m::Peripherals::take().unwrap();
     let p = efm32_init();
-    let clocks = p.Cmu.split().with_lfa_clk(LfClockSource::LfRco);
+    let clocks = Cmu::new(p.Cmu).with_lfa_clk(LfClockSource::LfRco).freeze();
     let gpio = Gpio::new(p.Gpio);
 
     let mut pin_delay = gpio.pd14.into_mode::<OutPp>();

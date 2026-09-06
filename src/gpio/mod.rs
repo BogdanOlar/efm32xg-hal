@@ -128,6 +128,8 @@ pub mod pin;
 pub mod port;
 
 /// GPIO ports and their pins
+#[derive(Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct Gpio<'d> {
     /// Port `A` configs for the entire port
     pub port_a: Port<'A'>,
@@ -246,13 +248,7 @@ pub struct Gpio<'d> {
     pub exti15ctrl: ExtiCtrl<15>,
 
     /// GPIO peripheral singleton (ownership token)
-    _peri: embassy_hal_internal::PeripheralRef<'d, crate::peripherals::Gpio>,
-}
-
-impl<'d> core::fmt::Debug for Gpio<'d> {
-    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-        f.debug_struct("GPIO").finish_non_exhaustive()
-    }
+    _peri: embassy_hal_internal::Peri<'d, crate::peripherals::Gpio>,
 }
 
 impl<'d> Gpio<'d> {
@@ -261,7 +257,7 @@ impl<'d> Gpio<'d> {
     /// The singleton (`crate::peripherals::Gpio`, obtained from [`crate::efm32_init`]) is moved in
     /// so a second `Gpio` on the same peripheral cannot be created. Register access is through the
     /// `crate::pac::GPIO` const, which is the chiptool PAC handle for this single GPIO instance.
-    pub fn new(peri: impl embassy_hal_internal::Peripheral<P = crate::peripherals::Gpio> + 'd) -> Self {
+    pub fn new(peri: embassy_hal_internal::Peri<'d, crate::peripherals::Gpio>) -> Self {
         let mut gpio = Self {
             port_a: Port::new(),
             port_b: Port::new(),
@@ -329,7 +325,7 @@ impl<'d> Gpio<'d> {
             exti14ctrl: ExtiCtrl::new(),
             exti15ctrl: ExtiCtrl::new(),
 
-            _peri: peri.into_ref(),
+            _peri: peri,
         };
 
         gpio.disable_clock();

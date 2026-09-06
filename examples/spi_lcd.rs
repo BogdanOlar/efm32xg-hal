@@ -6,7 +6,7 @@
 
 use cortex_m_rt::entry;
 use efm32xg_hal::{
-    cmu::{CmuExt, HfClockPrescaler, HfClockSource},
+    cmu::{Cmu, HfClockPrescaler, HfClockSource},
     efm32_init,
     gpio::{Gpio, InFilt, OutPp},
     timer::{Timer, TimerDivider},
@@ -26,10 +26,8 @@ use ls013b7dh03::{prelude::*, WIDTH};
 fn main() -> ! {
     let _core_p = cortex_m::Peripherals::take().unwrap();
     let p = efm32_init();
-    let clocks = p
-        .Cmu
-        .split()
-        .with_hf_clk(HfClockSource::HfRco, HfClockPrescaler::Div4);
+    let clocks = Cmu::new(p.Cmu)
+        .with_hf_clk(HfClockSource::HfRco, HfClockPrescaler::Div4).freeze();
     let gpio = Gpio::new(p.Gpio);
 
     // Let this App take control of display (this is a `UG154: EFM32 Pearl Gecko Starter Kit` paticularity)

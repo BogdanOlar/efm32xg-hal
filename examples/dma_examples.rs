@@ -31,7 +31,7 @@ use embassy_time::Timer as _;
 fn main() -> ! {
     let p = efm32_init();
     // Initialize the embassy time driver (for defmt timestamps)
-    let _clocks = p.Cmu.split().with_lfa_clk(LfClockSource::LfRco);
+    let _clocks = Cmu::new(p.Cmu).with_lfa_clk(LfClockSource::LfRco).freeze();
     Ticker::init();
 
     let dma = Dma::init(p.Ldma);

@@ -5,7 +5,7 @@
 pub mod spi;
 
 use crate::{peripherals, Sealed};
-use embassy_hal_internal::Peripheral;
+use embassy_hal_internal::PeripheralType;
 
 /// Identifies which USART peripheral a driver instance is bound to.
 ///
@@ -31,7 +31,7 @@ pub enum UsartId {
 /// [`spi::Spi`](crate::usart::spi::Spi) are generic over `T: UsartInstance` and store the
 /// peripheral singleton (via [`PeripheralRef`](embassy_hal_internal::PeripheralRef)), so the same
 /// peripheral cannot be used to build two drivers.
-pub trait UsartInstance: Sealed + Peripheral<P = Self> + 'static {
+pub trait UsartInstance: Sealed + PeripheralType + 'static {
     /// Returns the runtime [`UsartId`] for this instance (used e.g. for DMA source selection).
     fn id() -> UsartId;
     /// Returns the chiptool PAC register-block handle for this USART instance.

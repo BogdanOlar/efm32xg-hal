@@ -20,7 +20,7 @@ use crate::{
 };
 use core::cmp::max;
 use efm32xg_pac::usart::vals::{Clkloc, Cshold, Cssetup, Databits, Parity, Rxloc, Stopbits, Txloc};
-use embassy_hal_internal::{Peripheral, PeripheralRef};
+use embassy_hal_internal::Peri;
 use embedded_hal::{
     digital::{InputPin, OutputPin},
     spi::{Error, ErrorKind, ErrorType, Mode, Phase, Polarity, SpiBus},
@@ -40,24 +40,13 @@ pub const TX_FILLER_BYTE: u8 = 0xFF;
 /// at compile time by the generic [`SpiPins`] builder, and the SPI operating parameters are
 /// supplied via the non-generic [`Config`]. The only way to obtain an `Spi` is through a valid
 /// `SpiPins` + `Config` passed to [`Spi::new`].
+#[derive(Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct Spi<'d, T: UsartInstance> {
-    peri: PeripheralRef<'d, T>,
+    peri: Peri<'d, T>,
     pin_clk: DynamicPin,
     pin_tx: DynamicPin,
     pin_rx: DynamicPin,
-}
-
-impl<'d, T: UsartInstance> core::fmt::Debug for Spi<'d, T> {
-    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-        f.debug_struct("Spi").finish_non_exhaustive()
-    }
-}
-
-#[cfg(feature = "defmt")]
-impl<'d, T: UsartInstance> defmt::Format for Spi<'d, T> {
-    fn format(&self, fmt: defmt::Formatter) {
-        defmt::write!(fmt, "Spi")
-    }
 }
 
 impl<'d, T: UsartInstance> Spi<'d, T> {
@@ -236,7 +225,7 @@ impl<'d, T: UsartInstance> Spi<'d, T> {
     }
 
     /// Convert into a Spi implementation which used DMA channels
-    pub fn into_spi_dma(self, tx: DmaChannel<'d>, rx: DmaChannel<'d>) -> SpiDma<'d, T> {
+    pub fn into_spi_dma(self, tx: DmaChannel, rx: DmaChannel) -> SpiDma<'d, T> {
         SpiDma::new(self, tx, rx)
     }
 
@@ -312,20 +301,16 @@ impl<'d, T: UsartInstance> Spi<'d, T> {
 ///
 /// `SpiPins` only carries the peripheral and pin routing; the SPI operating mode, baudrate, bit
 /// order, loopback and sample delay are all configured via the [`Config`] passed to [`Spi::new`].
+#[derive(Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct SpiPins<'d, T: UsartInstance> {
-    peri: PeripheralRef<'d, T>,
+    peri: Peri<'d, T>,
     pin_clk: DynamicPin,
     pin_tx: DynamicPin,
     pin_rx: DynamicPin,
     clk_loc: u8,
     tx_loc: u8,
     rx_loc: u8,
-}
-
-impl<'d, T: UsartInstance> core::fmt::Debug for SpiPins<'d, T> {
-    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-        f.debug_struct("SpiPins").finish_non_exhaustive()
-    }
 }
 
 impl<'d, T: UsartInstance> SpiPins<'d, T> {
@@ -338,7 +323,7 @@ impl<'d, T: UsartInstance> SpiPins<'d, T> {
     /// `SpiPins` always represents a valid pin combination. The pins are type-erased into
     /// [`DynamicPin`]s. SPI operating parameters (mode, baudrate, ...) are supplied separately
     /// via [`Config`] to [`Spi::new`].
-    pub fn new<PCLK, PTX, PRX>(peri: impl Peripheral<P = T> + 'd, pin_clk: PCLK, pin_tx: PTX, pin_rx: PRX) -> Self
+    pub fn new<PCLK, PTX, PRX>(peri: Peri<'d, T>, pin_clk: PCLK, pin_tx: PTX, pin_rx: PRX) -> Self
     where
         PCLK: OutputPin + UsartClkPin + PinInfo,
         PTX: OutputPin + UsartTxPin + PinInfo,
@@ -355,7 +340,7 @@ impl<'d, T: UsartInstance> SpiPins<'d, T> {
         let rx_loc = pin_rx.loc();
 
         Self {
-            peri: peri.into_ref(),
+            peri: peri,
             pin_clk: DynamicPin::new(pin_clk.port(), pin_clk.pin(), pin_clk.mode()),
             pin_tx: DynamicPin::new(pin_tx.port(), pin_tx.pin(), pin_tx.mode()),
             pin_rx: DynamicPin::new(pin_rx.port(), pin_rx.pin(), pin_rx.mode()),
@@ -376,7 +361,7 @@ impl<'d, T: UsartInstance> SpiPins<'d, T> {
     /// Returns [`Err(SpiError::InvalidPin)`] if any pin is invalid for its role or in the wrong
     /// mode.
     pub fn try_new(
-        peri: impl Peripheral<P = T> + 'd,
+        peri: Peri<'d, T>,
         pin_clk: DynamicPin,
         pin_tx: DynamicPin,
         pin_rx: DynamicPin,
@@ -394,7 +379,7 @@ impl<'d, T: UsartInstance> SpiPins<'d, T> {
         }
 
         Ok(Self {
-            peri: peri.into_ref(),
+            peri: peri,
             pin_clk,
             pin_tx,
             pin_rx,
