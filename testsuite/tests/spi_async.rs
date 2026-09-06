@@ -2,7 +2,7 @@
 #![no_main]
 
 use defmt::error;
-use efm32pg1b_hal::{crc::Crc, usart::spi, usart::spi::dma::SpiDma};
+use efm32xg_hal::{crc::Crc, usart::spi, usart::spi::dma::SpiDma};
 
 // Provide a defmt timestamp backed by the embassy time driver. The `efemb` feature enables the
 // HAL's LeTimer0 time driver, which `#[init]` starts via `Ticker::init()` before any test runs, so
@@ -16,7 +16,7 @@ mod tests {
     use crate::{test_read_async, test_transfer_async, test_write_async};
     use defmt::error;
     use defmt_rtt as _;
-    use efm32pg1b_hal::{
+    use efm32xg_hal::{
         cmu::{CmuExt, LfClockSource},
         crc::{algos::CRC_32_CKSUM, Crc, CrcDriver},
         dma::{descriptor::Descriptor, Dma},
@@ -87,15 +87,15 @@ mod tests {
         // LFRCO at 32.768 kHz, matching the `efemb-timdrv-letim0-hz-32_768` feature) and the HfClk must
         // come from an HF source so that LeTimer0's `Ticker::init()` doesn't fault. See the warning in
         // [`Ticker::init`].
-        let _clocks = efm32pg1b_hal::pac::CMU
+        let _clocks = efm32xg_hal::pac::CMU
             .split()
             .with_lfa_clk(LfClockSource::LfRco);
         Ticker::init();
 
-        let crc = CrcDriver::new(efm32pg1b_hal::pac::GPCRC).into_algo_32(&CRC_32_CKSUM);
-        let gpio = GPIO::new(efm32pg1b_hal::pac::GPIO);
-        let dma = Dma::init(efm32pg1b_hal::pac::LDMA);
-        let spi = efm32pg1b_hal::usart::spi::Spi::new(
+        let crc = CrcDriver::new(efm32xg_hal::pac::GPCRC).into_algo_32(&CRC_32_CKSUM);
+        let gpio = GPIO::new(efm32xg_hal::pac::GPIO);
+        let dma = Dma::init(efm32xg_hal::pac::LDMA);
+        let spi = efm32xg_hal::usart::spi::Spi::new(
             SpiPins::new(
                 UsartId::USART0,
                 gpio.pc8.into_mode::<OutPp>(),

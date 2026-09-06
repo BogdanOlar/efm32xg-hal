@@ -11,7 +11,7 @@ pub mod spi;
 /// (rather than a raw `u8`) to make the peripheral selection self-documenting and exhaustive at
 /// every `match`. Callers pass the `UsartId` explicitly when constructing the driver (e.g. via
 /// [`spi::SpiPins::new`](crate::usart::spi::SpiPins::new)), since the chiptool-generated PAC exposes
-/// `USART0` and `USART1` as `pub const` instances of the same `efm32pg1b_pac::usart::Usart` type
+/// `USART0` and `USART1` as `pub const` instances of the same `efm32xg_pac::usart::Usart` type
 /// and therefore cannot distinguish them by type.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]

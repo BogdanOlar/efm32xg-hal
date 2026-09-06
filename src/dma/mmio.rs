@@ -131,7 +131,7 @@ pub(crate) fn set_reqsel(id: ChannelId, source: ChReqSel) {
 
     ch(id).reqsel().write(|w| {
         w.set_sigsel(sig);
-        w.set_sourcesel(efm32pg1b_pac::ldma::vals::Ch7ReqselSourcesel::from_bits(source));
+        w.set_sourcesel(efm32xg_pac::ldma::vals::Ch7ReqselSourcesel::from_bits(source));
     });
 }
 
@@ -163,14 +163,14 @@ pub(crate) fn ch_dst_set(id: ChannelId, addr: u32) {
 pub(crate) fn ch_write_descriptor(id: ChannelId, descr: &Descriptor) {
     ch(id)
         .ctrl()
-        .write_value(efm32pg1b_pac::ldma::regs::Ch7Ctrl(
+        .write_value(efm32xg_pac::ldma::regs::Ch7Ctrl(
             descr.raw[Descriptor::INDEX_CTRL],
         ));
     ch(id).src().write_value(descr.raw[Descriptor::INDEX_SRC]);
     ch(id).dst().write_value(descr.raw[Descriptor::INDEX_DST]);
     ch(id)
         .link()
-        .write_value(efm32pg1b_pac::ldma::regs::Ch7Link(
+        .write_value(efm32xg_pac::ldma::regs::Ch7Link(
             descr.raw[Descriptor::INDEX_LINK],
         ));
 }
@@ -194,7 +194,7 @@ pub(crate) fn dma() -> Ldma {
 /// The chiptool-generated PAC exposes the LDMA channels as separate `ch0()`..`ch7()` accessors
 /// (they are a clustered block), so this helper maps a runtime [`ChannelId`] to the matching
 /// channel register block.
-pub(crate) fn ch(id: ChannelId) -> efm32pg1b_pac::ldma::Channel {
+pub(crate) fn ch(id: ChannelId) -> efm32xg_pac::ldma::Channel {
     let dma = dma();
     match id as u8 {
         0 => dma.ch0(),

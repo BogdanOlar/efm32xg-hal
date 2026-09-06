@@ -10,7 +10,7 @@ use cortex_m::asm;
 use cortex_m_rt::entry;
 use defmt::{error, info};
 use defmt_rtt as _;
-use efm32pg1b_hal::{
+use efm32xg_hal::{
     dma::{
         descriptor::{
             Addr, AddrInc, BlockSize, Descriptor, SyncDescriptor, TransferCount,

@@ -5,7 +5,7 @@
 
 use cortex_m_rt::entry;
 use defmt_rtt as _;
-use efm32pg1b_hal::prelude::*;
+use efm32xg_hal::prelude::*;
 use panic_probe as _;
 
 #[entry]

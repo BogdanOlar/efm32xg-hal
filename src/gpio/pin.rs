@@ -829,7 +829,7 @@ impl From<PinId> for u8 {
 
 /// Configure GPIO peripheral registers values for individual pins
 pub(crate) mod pins {
-    use efm32pg1b_pac::gpio::vals::PaModelMode0;
+    use efm32xg_pac::gpio::vals::PaModelMode0;
 
     use crate::gpio::{
         pin::PinId,

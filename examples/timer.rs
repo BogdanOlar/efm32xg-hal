@@ -4,7 +4,7 @@
 #![no_std]
 
 use cortex_m_rt::entry;
-use efm32pg1b_hal::{
+use efm32xg_hal::{
     cmu::CmuExt,
     gpio::{Gpio, OutPp},
     pac,

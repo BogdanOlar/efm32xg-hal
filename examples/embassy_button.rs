@@ -2,7 +2,7 @@
 #![no_main]
 
 use defmt_rtt as _;
-use efm32pg1b_hal::{
+use efm32xg_hal::{
     gpio::{dynamic::DynamicPin, efemb::AsyncInputPin},
     pac::{self, Interrupt, NVIC},
     prelude::*,

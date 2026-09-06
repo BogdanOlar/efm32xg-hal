@@ -5,7 +5,7 @@ edition = "2021"
 publish = false
 
 [dependencies]
-efm32pg1b-hal = { path = "..", features = ["defmt", "qfn48"] }
+efm32xg-hal = { path = "..", features = ["defmt", "qfn48"] }
 cortex-m = { version = "0.7.7", features = ["critical-section-single-core"] }
 cortex-m-rt = "0.7.5"
 defmt = "1.0"
@@ -24,21 +24,21 @@ crc = "3.4"
 
 [features]
 # Forwarded to the HAL so the CRC compatibility tests can use `crc::Algorithm` conversions.
-crc-lib-compat = ["efm32pg1b-hal/crc-lib-compat"]
+crc-lib-compat = ["efm32xg-hal/crc-lib-compat"]
 # Pass-through features for rust-analyzer compatibility (the root crate defines these,
 # and rust-analyzer may forward them to all workspace members).
-defmt = ["efm32pg1b-hal/defmt"]
+defmt = ["efm32xg-hal/defmt"]
 # Embassy support for the HAL. Enabling this also turns on `embedded-test`'s async test
 # support (`embassy-010`), which the `spi_async` test needs to drive `async fn` tests on an
 # embassy executor.
 efemb = [
-    "efm32pg1b-hal/efemb",
+    "efm32xg-hal/efemb",
     "embedded-test/embassy-010",
     "efemb-timdrv-letim0-hz-32_768",
 ]
-efemb-timdrv-letim0-hz-32_768 = ["efm32pg1b-hal/efemb-timdrv-letim0-hz-32_768"]
-qfn48 = ["efm32pg1b-hal/qfn48"]
-use_debug_pins = ["efm32pg1b-hal/use_debug_pins"]
+efemb-timdrv-letim0-hz-32_768 = ["efm32xg-hal/efemb-timdrv-letim0-hz-32_768"]
+qfn48 = ["efm32xg-hal/qfn48"]
+use_debug_pins = ["efm32xg-hal/use_debug_pins"]
 
 # Integration tests run on-device via `probe-rs` (see `.cargo/config.toml`).
 [[test]]

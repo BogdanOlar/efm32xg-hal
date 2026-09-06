@@ -2,14 +2,14 @@
 #![no_main]
 
 use defmt::error;
-use efm32pg1b_hal::crc::Crc;
+use efm32xg_hal::crc::Crc;
 
 #[cfg(test)]
 #[embedded_test::tests]
 mod tests {
     use crate::test_transfer;
     use defmt_rtt as _;
-    use efm32pg1b_hal::{
+    use efm32xg_hal::{
         crc::{algos::CRC_32_CKSUM, Crc, CrcDriver},
         dma::descriptor::Descriptor,
         dma::Dma,
@@ -422,8 +422,8 @@ mod tests {
 
     #[init]
     fn init() -> (Crc<u32>, Dma) {
-        let crc = CrcDriver::new(efm32pg1b_hal::pac::GPCRC).into_algo_32(&CRC_32_CKSUM);
-        let dma = Dma::init(efm32pg1b_hal::pac::LDMA);
+        let crc = CrcDriver::new(efm32xg_hal::pac::GPCRC).into_algo_32(&CRC_32_CKSUM);
+        let dma = Dma::init(efm32xg_hal::pac::LDMA);
         (crc, dma)
     }
 }
@@ -433,7 +433,7 @@ mod tests {
 /// Starts the transfer via `memory_transfer`, waits for completion via `try_resolve`, then
 /// compares the CRCs of `src` and `dst`.
 fn test_transfer<Word: Copy + 'static>(
-    ch: &mut efm32pg1b_hal::dma::DmaChannel,
+    ch: &mut efm32xg_hal::dma::DmaChannel,
     src: &[Word],
     dst: &mut [Word],
     crc: &Crc<u32>,

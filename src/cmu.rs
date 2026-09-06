@@ -3,7 +3,7 @@
 
 use crate::gpio::{pin::mode::OutputMode, pin::Pin};
 use cortex_m::asm::nop;
-use efm32pg1b_pac::{
+use efm32xg_pac::{
     cmu::vals::{Dbg, Hf, Hfclklepresc, HfprescPresc, Lfa, Lfb, Lfe, Selected},
     cryotimer::vals::Oscsel,
     wdog::vals::Clksel,
@@ -31,7 +31,7 @@ pub trait CmuExt {
     fn split(self) -> Self::Parts;
 }
 
-impl CmuExt for efm32pg1b_pac::cmu::Cmu {
+impl CmuExt for efm32xg_pac::cmu::Cmu {
     type Parts = Clocks;
 
     fn split(self) -> Self::Parts {

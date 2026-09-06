@@ -3,12 +3,10 @@
 
 use crate::{cmu::Clocks, gpio::pin::Pin};
 use core::{convert::Infallible, marker::PhantomData};
-pub use efm32pg1b_pac::timer::vals::Presc as TimerDivider;
-use efm32pg1b_pac::{
+pub use efm32xg_pac::timer::vals::Presc as TimerDivider;
+use efm32xg_pac::{
     timer::vals::{
-        Cc0CtrlCmoa, Cc0CtrlIcedge, Cc0CtrlMode, Cc0loc, Cc1CtrlCmoa, Cc1CtrlIcedge, Cc1CtrlMode,
-        Cc1loc, Cc2CtrlCmoa, Cc2CtrlIcedge, Cc2CtrlMode, Cc2loc, Cc3CtrlCmoa, Cc3CtrlIcedge,
-        Cc3CtrlMode, Cc3loc, CtrlMode,
+        Cc0CtrlCmoa, Cc0CtrlIcedge, Cc0CtrlMode, Cc0loc, Cc1loc, Cc2loc, Cc3loc, CtrlMode,
     },
     CMU, TIMER0, TIMER1,
 };
@@ -21,7 +19,7 @@ use embedded_hal::{
 /// Extension trait for Timer PAC peripherals
 ///
 /// Because the chiptool-generated PAC exposes `TIMER0` and `TIMER1` as `pub const` instances of the
-/// same `efm32pg1b_pac::timer::Timer` type, this trait is parameterised by the const generic `TN`:
+/// same `efm32xg_pac::timer::Timer` type, this trait is parameterised by the const generic `TN`:
 /// `TimerExt<0>` is implemented for the `TIMER0` instance and `TimerExt<1>` for `TIMER1`. The
 /// desired timer number must be disambiguated at the call site, e.g. via a return type annotation
 /// such as `let t: Timer<0> = pac::TIMER0.into_timer(div);`.
@@ -30,20 +28,20 @@ pub trait TimerExt<const TN: u8> {
     fn into_timer(self, clock_divider: TimerDivider) -> crate::timer::Timer<TN>;
 }
 
-impl TimerExt<0> for efm32pg1b_pac::timer::Timer {
+impl TimerExt<0> for efm32xg_pac::timer::Timer {
     fn into_timer(self, clock_divider: TimerDivider) -> crate::timer::Timer<0> {
         crate::timer::Timer::<0>::new(clock_divider)
     }
 }
 
-impl TimerExt<1> for efm32pg1b_pac::timer::Timer {
+impl TimerExt<1> for efm32xg_pac::timer::Timer {
     fn into_timer(self, clock_divider: TimerDivider) -> crate::timer::Timer<1> {
         crate::timer::Timer::<1>::new(clock_divider)
     }
 }
 
 /// Get the register block of one of the two timers, specified by `TN` (either `TIMER0`, or `TIMER1`)
-const fn timerx<const TN: u8>() -> efm32pg1b_pac::timer::Timer {
+const fn timerx<const TN: u8>() -> efm32xg_pac::timer::Timer {
     match TN {
         0 => TIMER0,
         1 => TIMER1,
@@ -134,9 +132,9 @@ impl<const TN: u8, const CN: u8> TimerChannel<TN, CN> {
                     .routeloc0()
                     .write(|w| w.set_cc1loc(Cc1loc::from_bits(pin.loc())));
                 timer.cc1_ctrl().write(|w| {
-                    w.set_icedge(Cc1CtrlIcedge::Both);
-                    w.set_cmoa(Cc1CtrlCmoa::Toggle);
-                    w.set_mode(Cc1CtrlMode::Pwm)
+                    w.set_icedge(Cc0CtrlIcedge::Both);
+                    w.set_cmoa(Cc0CtrlCmoa::Toggle);
+                    w.set_mode(Cc0CtrlMode::Pwm)
                 });
                 timer.routepen().modify(|w| w.set_cc1pen(true));
             }
@@ -145,9 +143,9 @@ impl<const TN: u8, const CN: u8> TimerChannel<TN, CN> {
                     .routeloc0()
                     .write(|w| w.set_cc2loc(Cc2loc::from_bits(pin.loc())));
                 timer.cc2_ctrl().write(|w| {
-                    w.set_icedge(Cc2CtrlIcedge::Both);
-                    w.set_cmoa(Cc2CtrlCmoa::Toggle);
-                    w.set_mode(Cc2CtrlMode::Pwm)
+                    w.set_icedge(Cc0CtrlIcedge::Both);
+                    w.set_cmoa(Cc0CtrlCmoa::Toggle);
+                    w.set_mode(Cc0CtrlMode::Pwm)
                 });
                 timer.routepen().modify(|w| w.set_cc2pen(true));
             }
@@ -156,9 +154,9 @@ impl<const TN: u8, const CN: u8> TimerChannel<TN, CN> {
                     .routeloc0()
                     .write(|w| w.set_cc3loc(Cc3loc::from_bits(pin.loc())));
                 timer.cc3_ctrl().write(|w| {
-                    w.set_icedge(Cc3CtrlIcedge::Both);
-                    w.set_cmoa(Cc3CtrlCmoa::Toggle);
-                    w.set_mode(Cc3CtrlMode::Pwm)
+                    w.set_icedge(Cc0CtrlIcedge::Both);
+                    w.set_cmoa(Cc0CtrlCmoa::Toggle);
+                    w.set_mode(Cc0CtrlMode::Pwm)
                 });
                 timer.routepen().modify(|w| w.set_cc3pen(true));
             }
@@ -182,13 +180,13 @@ impl<const TN: u8, const CN: u8> TimerChannel<TN, CN> {
                 .write(|w| w.set_mode(Cc0CtrlMode::Outputcompare)),
             1 => timer
                 .cc1_ctrl()
-                .write(|w| w.set_mode(Cc1CtrlMode::Outputcompare)),
+                .write(|w| w.set_mode(Cc0CtrlMode::Outputcompare)),
             2 => timer
                 .cc2_ctrl()
-                .write(|w| w.set_mode(Cc2CtrlMode::Outputcompare)),
+                .write(|w| w.set_mode(Cc0CtrlMode::Outputcompare)),
             3 => timer
                 .cc3_ctrl()
-                .write(|w| w.set_mode(Cc3CtrlMode::Outputcompare)),
+                .write(|w| w.set_mode(Cc0CtrlMode::Outputcompare)),
             _ => unreachable!(),
         };
 

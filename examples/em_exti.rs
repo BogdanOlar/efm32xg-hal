@@ -7,7 +7,7 @@ use cortex_m_rt::entry;
 use critical_section::Mutex;
 use defmt::info;
 use defmt_rtt as _;
-use efm32pg1b_hal::{
+use efm32xg_hal::{
     gpio::exti::{self, ExtiEdge, ExtiId},
     pac::{Interrupt, NVIC},
     prelude::*,

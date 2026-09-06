@@ -18,7 +18,7 @@ use crate::{
     },
     usart::{mmio, spi::dma::SpiDma, UsartId},
 };
-use efm32pg1b_pac::usart::vals::{
+use efm32xg_pac::usart::vals::{
     Clkloc, Cshold, Cssetup, Databits, Parity, Rxloc, Stopbits, Txloc,
 };
 use core::cmp::max;
@@ -262,7 +262,7 @@ impl Spi {
         const IFC_MASK: u32 = 0x0001FFF9;
         usart_p
             .ifc()
-            .write_value(efm32pg1b_pac::usart::regs::Ifs(IFC_MASK));
+            .write_value(efm32xg_pac::usart::regs::Ifs(IFC_MASK));
 
         usart_p.timing().write_value(Default::default());
         usart_p.routepen().write_value(Default::default());
@@ -669,9 +669,9 @@ impl SpiBus<u8> for Spi {
 ///
 /// Note: if you try to create an `Spi` instance and get a compiler error like
 /// ```text
-///     the trait `efm32pg1b_hal::spi::UsartClkPin` is not implemented for
-///     `efm32pg1b_hal::gpio::Pin<'D', 8, efm32pg1b_hal::gpio::Input>`, which is required by
-///     `efm32pg1b_hal::usart::spi::Spi::new<efm32pg1b_hal::efm32pg1b_pac::USART1, _, _, _>`
+///     the trait `efm32xg_hal::spi::UsartClkPin` is not implemented for
+///     `efm32xg_hal::gpio::Pin<'D', 8, efm32xg_hal::gpio::Input>`, which is required by
+///     `efm32xg_hal::usart::spi::Spi::new<efm32xg_hal::efm32xg_pac::USART1, _, _, _>`
 /// ```
 ///
 /// then it's probably the case that you're trying to use a Pin as an SPI Clock pin when that pin is not available
@@ -741,9 +741,9 @@ impl_clock_loc!(31, 'A', 1);
 ///
 /// Note: if you try to create an `Spi` instance and get a compiler error like
 /// ```text
-///     the trait `efm32pg1b_hal::spi::UsartTxPin` is not implemented for
-///     `efm32pg1b_hal::gpio::Pin<'D', 8, efm32pg1b_hal::gpio::Input>`, which is required by
-///     `efm32pg1b_hal::usart::spi::Spi::new<efm32pg1b_hal::efm32pg1b_pac::USART1, _, _, _>`
+///     the trait `efm32xg_hal::spi::UsartTxPin` is not implemented for
+///     `efm32xg_hal::gpio::Pin<'D', 8, efm32xg_hal::gpio::Input>`, which is required by
+///     `efm32xg_hal::usart::spi::Spi::new<efm32xg_hal::efm32xg_pac::USART1, _, _, _>`
 /// ```
 ///
 /// then it's probably the case that you're trying to use a Pin as an SPI Tx pin when that pin is not available
@@ -813,9 +813,9 @@ impl_tx_loc!(31, 'F', 7);
 ///
 /// Note: if you try to create an `Spi` instance and get a compiler error like
 /// ```sh
-///     the trait `efm32pg1b_hal::spi::UsartRxPin` is not implemented for
-///     `efm32pg1b_hal::gpio::Pin<'D', 8, efm32pg1b_hal::gpio::Input>`, which is required by
-///     `efm32pg1b_hal::usart::spi::Spi::new<efm32pg1b_hal::efm32pg1b_pac::USART1, _, _, _>`
+///     the trait `efm32xg_hal::spi::UsartRxPin` is not implemented for
+///     `efm32xg_hal::gpio::Pin<'D', 8, efm32xg_hal::gpio::Input>`, which is required by
+///     `efm32xg_hal::usart::spi::Spi::new<efm32xg_hal::efm32xg_pac::USART1, _, _, _>`
 /// ```
 ///
 /// then it's probably the case that you're trying to use a Pin as an SPI Rx pin when that pin is not available

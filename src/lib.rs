@@ -1,4 +1,4 @@
-//! efm32pg1b-hal
+//! efm32xg-hal
 //!
 //! ## Feature flags
 #![doc = document_features::document_features!()]
@@ -9,7 +9,7 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 // #![warn(clippy::undocumented_unsafe_blocks)]
 
-pub use efm32pg1b_pac as pac;
+pub use efm32xg_pac as pac;
 
 pub mod cmu;
 pub mod crc;
@@ -42,7 +42,7 @@ pub mod prelude {
         },
         usart::spi::{BitOrder, Config, Spi, SpiError, SpiPins},
     };
-    pub use efm32pg1b_pac as pac;
+    pub use efm32xg_pac as pac;
     pub use embedded_hal::{
         delay::DelayNs,
         digital::{InputPin, OutputPin, PinState, StatefulOutputPin},

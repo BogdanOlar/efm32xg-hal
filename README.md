@@ -1,7 +1,6 @@
-# efm32pg1b-hal
-Hardware abstraction layer (HAL) for 
-
-[Silicon Labs EFM32PG1B](https://www.silabs.com/mcu/32-bit/efm32-pearl-gecko/device.EFM32PG1B200F256GM48) 
+# efm32xg-hal
+Hardware abstraction layer (HAL) for
+[Silicon Labs EFM32PG1B](https://www.silabs.com/mcu/32-bit/efm32-pearl-gecko/device.EFM32PG1B200F256GM48)
 and
 [Silicon Labs EFM32GG11](https://www.silabs.com/mcu/32-bit-microcontrollers/efm32-giant-gecko-gg11/device.efm32gg11b820f2048gl192)
 microcontrollers

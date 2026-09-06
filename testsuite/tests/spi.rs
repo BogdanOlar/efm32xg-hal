@@ -2,7 +2,7 @@
 #![no_main]
 
 use defmt::error;
-use efm32pg1b_hal::{crc::Crc, usart::spi};
+use efm32xg_hal::{crc::Crc, usart::spi};
 use embedded_hal::spi::{ErrorType, SpiBus};
 
 #[cfg(test)]
@@ -10,7 +10,7 @@ use embedded_hal::spi::{ErrorType, SpiBus};
 mod tests {
     use crate::test_transfer;
     use defmt_rtt as _;
-    use efm32pg1b_hal::{
+    use efm32xg_hal::{
         crc::{algos::CRC_32_CKSUM, Crc, CrcDriver},
         dma::descriptor::Descriptor,
         dma::Dma,
@@ -45,8 +45,8 @@ mod tests {
 
     #[init]
     fn init() -> (Spi, Crc<u32>, Dma) {
-        let crc = CrcDriver::new(efm32pg1b_hal::pac::GPCRC).into_algo_32(&CRC_32_CKSUM);
-        let gpio = GPIO::new(efm32pg1b_hal::pac::GPIO);
+        let crc = CrcDriver::new(efm32xg_hal::pac::GPCRC).into_algo_32(&CRC_32_CKSUM);
+        let gpio = GPIO::new(efm32xg_hal::pac::GPIO);
         let spi = Spi::new(
             SpiPins::new(
                 UsartId::USART0,
@@ -56,7 +56,7 @@ mod tests {
             ),
             &Config::new(MODE_2, 1).with_loopback(true),
         );
-        let dma = Dma::init(efm32pg1b_hal::pac::LDMA);
+        let dma = Dma::init(efm32xg_hal::pac::LDMA);
         (spi, crc, dma)
     }
 

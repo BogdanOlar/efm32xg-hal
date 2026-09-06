@@ -4,13 +4,13 @@
 #![no_std]
 
 use cortex_m_rt::entry;
-use efm32pg1b_hal::{
+use efm32xg_hal::{
     crc::{algos::CRC_32_CKSUM, CrcDriver},
     dma::{descriptor::Descriptor, Dma},
     prelude::*,
 };
 
-use efm32pg1b_pac::Peripherals;
+use efm32xg_pac::Peripherals;
 use embedded_hal::spi::MODE_2;
 // pick a panicking behavior
 use panic_halt as _; // you can put a breakpoint on `rust_begin_unwind` to catch panics

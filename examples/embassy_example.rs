@@ -1,7 +1,7 @@
 #![no_main]
 #![no_std]
 
-use efm32pg1b_hal::{
+use efm32xg_hal::{
     cmu::{HfClockPrescaler, HfClockSource, LfClockSource},
     prelude::*,
     timer_le::efemb::Ticker,

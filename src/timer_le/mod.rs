@@ -26,7 +26,7 @@ pub trait LeTimerExt {
     fn into_timer(self) -> Self::Timer;
 }
 
-impl LeTimerExt for efm32pg1b_pac::letimer::Letimer {
+impl LeTimerExt for efm32xg_pac::letimer::Letimer {
     type Timer = LeTimer;
     fn into_timer(self) -> Self::Timer {
         Self::Timer::new()
@@ -85,7 +85,7 @@ impl LeTimer {
 
 mod mmio {
     use cortex_m::asm::nop;
-    use efm32pg1b_pac::{letimer::Letimer as Timer, LETIMER};
+    use efm32xg_pac::{letimer::Letimer as Timer, LETIMER};
 
     /// Reset the timer peripheral
     ///

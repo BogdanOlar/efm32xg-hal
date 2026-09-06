@@ -4,7 +4,7 @@
 #![no_std]
 
 use cortex_m_rt::entry;
-use efm32pg1b_hal::{
+use efm32xg_hal::{
     cmu::{CmuExt, LfClockSource},
     gpio::{Gpio, OutPp},
     pac,
@@ -12,7 +12,7 @@ use efm32pg1b_hal::{
     timer_le::LeTimerExt,
 };
 
-use efm32pg1b_pac::Letimer0;
+use efm32xg_pac::Letimer0;
 use embedded_hal::{delay::DelayNs, digital::StatefulOutputPin};
 // pick a panicking behavior
 use panic_halt as _; // you can put a breakpoint on `rust_begin_unwind` to catch panics
