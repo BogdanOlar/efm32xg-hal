@@ -5,7 +5,7 @@ use crate::{
     dma::{descriptor::UnitSize, transfer::NoParams},
     usart::spi::{
         dma::{RxParam, SpiDma, TxParam},
-        SpiError,
+        SpiError, UsartInstance,
     },
 };
 #[cfg(feature = "debug-spi-dma-defmt-info")]
@@ -13,7 +13,7 @@ use defmt::info;
 use embassy_futures::join::join;
 use embedded_hal_async::spi::SpiBus;
 
-impl SpiDma {
+impl<'d, T: UsartInstance> SpiDma<'d, T> {
     /// Do an async SPI transaction.
     ///
     /// `write` is written to the slave on MOSI and words received on MISO are stored in `read`.
@@ -103,7 +103,7 @@ impl SpiDma {
     }
 }
 
-impl SpiBus for SpiDma {
+impl<'d, T: UsartInstance> SpiBus for SpiDma<'d, T> {
     async fn read(&mut self, words: &mut [u8]) -> Result<(), Self::Error> {
         self.transfer_async(words, &[]).await
     }

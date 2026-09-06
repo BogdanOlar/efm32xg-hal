@@ -7,6 +7,7 @@ use defmt::{error, info};
 use defmt_rtt as _;
 use efm32xg_hal::{
     dma::{Dma, DmaChannel},
+    efm32_init,
     prelude::*,
     timer_le::efemb::Ticker,
 };
@@ -25,11 +26,11 @@ const TRANSFER_UNIT_COUNT: usize = 0x800 * 4 + 5;
 
 #[entry]
 fn main() -> ! {
-    let p = pac::Peripherals::take().unwrap();
-    let dma = Dma::init(p.ldma);
+    let p = efm32_init();
+    let dma = Dma::init(p.Ldma);
 
     // Initialize the embassy time driver (for defmt timestamps)
-    let _clocks = p.cmu.split().with_lfa_clk(LfClockSource::LfRco);
+    let _clocks = p.Cmu.split().with_lfa_clk(LfClockSource::LfRco);
     Ticker::init();
 
     let mut ch = dma.ch1;
@@ -38,8 +39,9 @@ fn main() -> ! {
 
         // DEBUG: make sure we did not drop the transfer while the DMA channel was not done
         {
-            let p = unsafe { pac::Peripherals::steal() };
-            let dma = Dma::init(p.ldma);
+            // SAFETY: read-only check of the DMA channel busy flag; the LDMA singleton was
+            // already consumed above, but this block only reads channel state.
+            let dma = Dma::init(unsafe { efm32xg_hal::peripherals::Ldma::steal() });
             assert!(!dma.ch1.busy());
         }
 

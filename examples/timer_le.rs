@@ -6,13 +6,12 @@
 use cortex_m_rt::entry;
 use efm32xg_hal::{
     cmu::{CmuExt, LfClockSource},
+    efm32_init,
     gpio::{Gpio, OutPp},
-    pac,
     timer::{Timer, TimerDivider},
     timer_le::LeTimerExt,
 };
 
-use efm32xg_pac::Letimer0;
 use embedded_hal::{delay::DelayNs, digital::StatefulOutputPin};
 // pick a panicking behavior
 use panic_halt as _; // you can put a breakpoint on `rust_begin_unwind` to catch panics
@@ -25,22 +24,21 @@ use defmt_rtt as _;
 #[entry]
 fn main() -> ! {
     let _core_p = cortex_m::Peripherals::take().unwrap();
-    let p = pac::Peripherals::take().unwrap();
-    let clocks = p.cmu.split().with_lfa_clk(LfClockSource::LfRco);
-    let gpio = Gpio::new(p.gpio);
+    let p = efm32_init();
+    let clocks = p.Cmu.split().with_lfa_clk(LfClockSource::LfRco);
+    let gpio = Gpio::new(p.Gpio);
 
     let mut pin_delay = gpio.pd14.into_mode::<OutPp>();
 
-    let timer = Timer::new(pac::TIMER0, TimerDivider::Div1024);
+    let timer = Timer::new(p.Timer0, TimerDivider::Div1024);
     let (tim0ch0, _tim0ch1, _tim0ch2, _tim0ch3) = timer.into_channels();
     let mut delayer = tim0ch0.into_delay(&clocks);
     println!("{}", &delayer);
 
     let pin_pwm = gpio.pd13.into_mode::<OutPp>();
-    let _pwm = p.letimer0.into_timer().into_ch0_pwm(pin_pwm);
+    let _pwm = p.Letimer.into_timer().into_ch0_pwm(pin_pwm);
 
-    let le_timer = unsafe { &*Letimer0::ptr() };
-    let is_le_timer_running = le_timer.status().read().running().bit_is_set();
+    let is_le_timer_running = efm32xg_hal::pac::LETIMER.status().read().running();
     println!("is_le_timer_running: {}", &is_le_timer_running);
 
     let mut seconds: u32 = 0;

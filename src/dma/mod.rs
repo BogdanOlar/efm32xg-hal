@@ -22,8 +22,10 @@ use crate::{
         irq::set_handler,
         transfer::{ChannelTransfer, MemoryTransferParams, TransferParams},
     },
-    pac::{ldma::Ldma, Interrupt},
+    pac::Interrupt,
+    peripherals,
 };
+use embassy_hal_internal::{Peripheral, PeripheralRef};
 #[cfg(feature = "debug-spi-dma-defmt-info")]
 use defmt::info;
 
@@ -34,30 +36,50 @@ const CHANNEL_COUNT: usize = 1 << 3;
 pub type DmaResult = Result<(), DmaError>;
 
 /// DMA driver
-#[derive(Debug)]
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub struct Dma {
+///
+/// Holds the LDMA peripheral singleton (as a [`PeripheralRef`]) and exposes the eight DMA
+/// channels. Each [`DmaChannel`] clones the peripheral reference (via `clone_unchecked`) so it
+/// stays alive for as long as the channel exists, not just while the `Dma` struct is alive.
+pub struct Dma<'d> {
+    peri: PeripheralRef<'d, peripherals::Ldma>,
     /// DMA channel 0
-    pub ch0: DmaChannel,
+    pub ch0: DmaChannel<'d>,
     /// DMA channel 1
-    pub ch1: DmaChannel,
+    pub ch1: DmaChannel<'d>,
     /// DMA channel 2
-    pub ch2: DmaChannel,
+    pub ch2: DmaChannel<'d>,
     /// DMA channel 3
-    pub ch3: DmaChannel,
+    pub ch3: DmaChannel<'d>,
     /// DMA channel 4
-    pub ch4: DmaChannel,
+    pub ch4: DmaChannel<'d>,
     /// DMA channel 5
-    pub ch5: DmaChannel,
+    pub ch5: DmaChannel<'d>,
     /// DMA channel 6
-    pub ch6: DmaChannel,
+    pub ch6: DmaChannel<'d>,
     /// DMA channel 7
-    pub ch7: DmaChannel,
+    pub ch7: DmaChannel<'d>,
 }
 
-impl Dma {
-    /// Initialize DMA
-    pub fn init(_dma_p: Ldma) -> Self {
+impl<'d> core::fmt::Debug for Dma<'d> {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.debug_struct("Dma").finish_non_exhaustive()
+    }
+}
+
+#[cfg(feature = "defmt")]
+impl<'d> defmt::Format for Dma<'d> {
+    fn format(&self, fmt: defmt::Formatter) {
+        defmt::write!(fmt, "Dma")
+    }
+}
+
+impl<'d> Dma<'d> {
+    /// Initialize DMA, consuming the LDMA peripheral singleton.
+    ///
+    /// The singleton (`[`peripherals::Ldma`]`, from [`crate::efm32_init`]) is moved in and held
+    /// by the returned `Dma` (and its channels) for their entire lifetime, so a second
+    /// `Dma::init` on the same peripheral cannot be called.
+    pub fn init(peri: impl Peripheral<P = peripherals::Ldma> + 'd) -> Self {
         // Enable DMA clock
         crate::pac::CMU.hfbusclken0().modify(|w| w.set_ldma(true));
 
@@ -65,28 +87,56 @@ impl Dma {
             cortex_m::peripheral::NVIC::unmask(Interrupt::LDMA);
         }
 
+        let peri = peri.into_ref();
+
+        // SAFETY: each channel operates on a distinct LDMA channel register set; the
+        // PeripheralRef clones are disjoint by channel number.
         Self {
-            ch0: DmaChannel { id: ChannelId::Ch0 },
-            ch1: DmaChannel { id: ChannelId::Ch1 },
-            ch2: DmaChannel { id: ChannelId::Ch2 },
-            ch3: DmaChannel { id: ChannelId::Ch3 },
-            ch4: DmaChannel { id: ChannelId::Ch4 },
-            ch5: DmaChannel { id: ChannelId::Ch5 },
-            ch6: DmaChannel { id: ChannelId::Ch6 },
-            ch7: DmaChannel { id: ChannelId::Ch7 },
+            ch0: DmaChannel::new(ChannelId::Ch0, unsafe { peri.clone_unchecked() }),
+            ch1: DmaChannel::new(ChannelId::Ch1, unsafe { peri.clone_unchecked() }),
+            ch2: DmaChannel::new(ChannelId::Ch2, unsafe { peri.clone_unchecked() }),
+            ch3: DmaChannel::new(ChannelId::Ch3, unsafe { peri.clone_unchecked() }),
+            ch4: DmaChannel::new(ChannelId::Ch4, unsafe { peri.clone_unchecked() }),
+            ch5: DmaChannel::new(ChannelId::Ch5, unsafe { peri.clone_unchecked() }),
+            ch6: DmaChannel::new(ChannelId::Ch6, unsafe { peri.clone_unchecked() }),
+            ch7: DmaChannel::new(ChannelId::Ch7, unsafe { peri.clone_unchecked() }),
+            peri,
         }
     }
 }
 
 /// DMA channel singleton
-#[derive(Debug)]
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub struct DmaChannel {
+///
+/// Each channel holds a [`PeripheralRef`] to the LDMA peripheral, ensuring the peripheral
+/// singleton stays alive for as long as the channel does.
+pub struct DmaChannel<'d> {
+    /// LDMA peripheral reference (ownership token)
+    _peri: PeripheralRef<'d, peripherals::Ldma>,
     /// Channel ID
     id: ChannelId,
 }
 
-impl DmaChannel {
+impl<'d> core::fmt::Debug for DmaChannel<'d> {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.debug_struct("DmaChannel")
+            .field("id", &self.id)
+            .finish_non_exhaustive()
+    }
+}
+
+#[cfg(feature = "defmt")]
+impl<'d> defmt::Format for DmaChannel<'d> {
+    fn format(&self, fmt: defmt::Formatter) {
+        defmt::write!(fmt, "DmaChannel({})", self.id as u8)
+    }
+}
+
+impl<'d> DmaChannel<'d> {
+    /// Create a new DMA channel with the given ID and peripheral reference.
+    pub(crate) fn new(id: ChannelId, peri: PeripheralRef<'d, peripherals::Ldma>) -> Self {
+        Self { _peri: peri, id }
+    }
+
     /// Reset channel to a known state
     pub fn reset(&mut self) {
         self.cancel();
@@ -265,7 +315,7 @@ impl DmaChannel {
         desc: &TransferDescriptor,
         with_sw_trigger: bool,
         params: P,
-    ) -> Result<ChannelTransfer<'tl, P>, DmaError> {
+    ) -> Result<ChannelTransfer<'tl, 'd, P>, DmaError> {
         // cancel any on-going transfers
         self.cancel();
 
@@ -293,7 +343,7 @@ impl DmaChannel {
     pub(crate) fn dummy_peripheral_transfer<'tl, P: TransferParams<'tl>>(
         &'tl mut self,
         params: P,
-    ) -> Result<ChannelTransfer<'tl, P>, DmaError> {
+    ) -> Result<ChannelTransfer<'tl, 'd, P>, DmaError> {
         // cancel any on-going transfers
         self.cancel();
 
@@ -354,7 +404,7 @@ impl DmaChannel {
         &'tl mut self,
         src: &'tl [Word],
         dst: &'tl mut [Word],
-    ) -> Result<ChannelTransfer<'tl, MemoryTransferParams<'tl, Word>>, DmaError> {
+    ) -> Result<ChannelTransfer<'tl, 'd, MemoryTransferParams<'tl, Word>>, DmaError> {
         if src.len() != dst.len() {
             return Err(DmaError::BufferMismatch);
         }

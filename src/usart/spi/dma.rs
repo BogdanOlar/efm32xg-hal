@@ -9,35 +9,46 @@ use crate::{
         ChReqSel, DmaChannel, DmaResult,
     },
     usart::{
-        mmio,
         spi::{Spi, SpiError, TX_FILLER_BYTE},
-        UsartId,
+        UsartId, UsartInstance,
     },
 };
 #[cfg(feature = "debug-spi-dma-defmt-info")]
 use defmt::info;
+use embassy_hal_internal::PeripheralRef;
 use embedded_hal::spi::{ErrorType, SpiBus};
 
 /// Maximum number of DMA descriptors in [`SpiDma::descriptors`]
 const DESC_COUNT: usize = 6;
 
 /// SPI master which implements `SpiBus` trait
-#[derive(Debug)]
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub struct SpiDma {
-    pub(crate) spi: Spi,
-    pub(crate) tx: DmaChannel,
-    pub(crate) rx: DmaChannel,
+pub struct SpiDma<'d, T: UsartInstance> {
+    pub(crate) spi: Spi<'d, T>,
+    pub(crate) tx: DmaChannel<'d>,
+    pub(crate) rx: DmaChannel<'d>,
     pub(crate) tx_descriptors: [Descriptor; DESC_COUNT],
     pub(crate) rx_descriptors: [Descriptor; DESC_COUNT],
 }
 
-impl SpiDma {
-    pub(crate) fn new(spi: Spi, mut tx: DmaChannel, mut rx: DmaChannel) -> Self {
+impl<'d, T: UsartInstance> core::fmt::Debug for SpiDma<'d, T> {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.debug_struct("SpiDma").finish_non_exhaustive()
+    }
+}
+
+#[cfg(feature = "defmt")]
+impl<'d, T: UsartInstance> defmt::Format for SpiDma<'d, T> {
+    fn format(&self, fmt: defmt::Formatter) {
+        defmt::write!(fmt, "SpiDma")
+    }
+}
+
+impl<'d, T: UsartInstance> SpiDma<'d, T> {
+    pub(crate) fn new(spi: Spi<'d, T>, mut tx: DmaChannel<'d>, mut rx: DmaChannel<'d>) -> Self {
         tx.reset();
         rx.reset();
 
-        let (tx_sel, rx_sel) = Self::dma_sources(spi.id());
+        let (tx_sel, rx_sel) = Self::dma_sources(T::id());
         tx.set_peripheral_req(tx_sel);
         tx.set_ignore_single_req(true);
         rx.set_peripheral_req(rx_sel);
@@ -59,7 +70,7 @@ impl SpiDma {
         &'stl mut self,
         read: &'stl mut [Word],
         write: &'stl [Word],
-    ) -> Result<SpiTransfer<'stl, TxParam<'stl, Word>, RxParam<'stl, Word>>, SpiError> {
+    ) -> Result<SpiTransfer<'stl, 'd, TxParam<'stl, Word>, RxParam<'stl, Word>>, SpiError> {
         // FIXME: unit is limited to Byte until we convince the Spi to accept other `UnitSize`s
         let unit = UnitSize::Byte;
         let write_addr = write.as_ptr().addr();
@@ -111,7 +122,7 @@ impl SpiDma {
 
     /// Wait until all operations have completed and the bus is idle.
     pub fn flush_blocking<'stl, TXP: TransferParams<'stl>, RXP: TransferParams<'stl>>(
-        mut transfer: SpiTransfer<'stl, TXP, RXP>,
+        mut transfer: SpiTransfer<'stl, 'd, TXP, RXP>,
     ) -> Result<(), SpiError> {
         loop {
             if let Some(t) = transfer.try_resolve() {
@@ -161,7 +172,7 @@ impl SpiDma {
         #[cfg(feature = "debug-spi-dma-defmt-info")]
         info!("UNIT {}", unit);
 
-        let usart_p = mmio::usartx(self.spi.id());
+        let usart_p = T::regs();
         let mut tx_list = DescList::new(&mut self.tx_descriptors);
         let mut rx_list = DescList::new(&mut self.rx_descriptors);
 
@@ -280,7 +291,7 @@ impl SpiDma {
     }
 }
 
-impl SpiBus for SpiDma {
+impl<'d, T: UsartInstance> SpiBus for SpiDma<'d, T> {
     fn read(&mut self, words: &mut [u8]) -> Result<(), Self::Error> {
         self.transfer(words, &[])
     }
@@ -306,24 +317,24 @@ impl SpiBus for SpiDma {
     }
 }
 
-impl ErrorType for SpiDma {
+impl<'d, T: UsartInstance> ErrorType for SpiDma<'d, T> {
     type Error = SpiError;
 }
 
 /// Spi transfer token
 ///
 /// Ensures that the Spi driver and the transfer buffers cannot be used while the transfer is still active.
-#[derive(Debug)]
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub struct SpiTransfer<'stl, TXP: TransferParams<'stl>, RXP: TransferParams<'stl>> {
-    tx: ChannelTransfer<'stl, TXP>,
+pub struct SpiTransfer<'stl, 'd, TXP: TransferParams<'stl>, RXP: TransferParams<'stl>> {
+    tx: ChannelTransfer<'stl, 'd, TXP>,
     tx_res: Option<DmaResult>,
-    rx: ChannelTransfer<'stl, RXP>,
+    rx: ChannelTransfer<'stl, 'd, RXP>,
     rx_res: Option<DmaResult>,
 }
 
-impl<'stl, TXP: TransferParams<'stl>, RXP: TransferParams<'stl>> SpiTransfer<'stl, TXP, RXP> {
-    fn new(tx: ChannelTransfer<'stl, TXP>, rx: ChannelTransfer<'stl, RXP>) -> Self {
+impl<'stl, 'd, TXP: TransferParams<'stl>, RXP: TransferParams<'stl>>
+    SpiTransfer<'stl, 'd, TXP, RXP>
+{
+    fn new(tx: ChannelTransfer<'stl, 'd, TXP>, rx: ChannelTransfer<'stl, 'd, RXP>) -> Self {
         Self {
             tx,
             tx_res: None,

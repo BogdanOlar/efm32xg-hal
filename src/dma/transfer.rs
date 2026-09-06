@@ -5,16 +5,15 @@ use crate::dma::{irq, ChannelId, DmaChannel, DmaResult};
 
 /// DMA channel transfer
 #[derive(Debug)]
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub struct ChannelTransfer<'tl, P: TransferParams<'tl>> {
+pub struct ChannelTransfer<'tl, 'd, P: TransferParams<'tl>> {
     /// DMA channel
-    pub(crate) ch: &'tl mut DmaChannel,
+    pub(crate) ch: &'tl mut DmaChannel<'d>,
     /// DMA Channel transfer parameters.
     params: P,
 }
 
-impl<'tl, P: TransferParams<'tl>> ChannelTransfer<'tl, P> {
-    pub(crate) fn new(ch: &'tl mut DmaChannel, params: P) -> Self {
+impl<'tl, 'd, P: TransferParams<'tl>> ChannelTransfer<'tl, 'd, P> {
+    pub(crate) fn new(ch: &'tl mut DmaChannel<'d>, params: P) -> Self {
         Self { ch, params }
     }
 
@@ -54,7 +53,7 @@ impl<'tl, P: TransferParams<'tl>> ChannelTransfer<'tl, P> {
 /// Marker trait for the parameters of a DMA transfer
 pub trait TransferParams<'tl>: Unpin {}
 
-impl<'tl, P: TransferParams<'tl>> Drop for ChannelTransfer<'tl, P> {
+impl<'tl, 'd, P: TransferParams<'tl>> Drop for ChannelTransfer<'tl, 'd, P> {
     fn drop(&mut self) {
         self.cancel();
     }

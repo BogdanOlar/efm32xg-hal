@@ -128,7 +128,7 @@ pub mod pin;
 pub mod port;
 
 /// GPIO ports and their pins
-pub struct Gpio {
+pub struct Gpio<'d> {
     /// Port `A` configs for the entire port
     pub port_a: Port<'A'>,
     /// Port `B` configs for the entire port
@@ -245,19 +245,23 @@ pub struct Gpio {
     /// External Interrupt 15 controller
     pub exti15ctrl: ExtiCtrl<15>,
 
-    /// GPIO PAC peripheral
-    gpio_p: crate::pac::gpio::Gpio,
+    /// GPIO peripheral singleton (ownership token)
+    _peri: embassy_hal_internal::PeripheralRef<'d, crate::peripherals::Gpio>,
 }
 
-impl core::fmt::Debug for Gpio {
+impl<'d> core::fmt::Debug for Gpio<'d> {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         f.debug_struct("GPIO").finish_non_exhaustive()
     }
 }
 
-impl Gpio {
-    /// Create the GPIO HAL driver consuming the PAC peripheral
-    pub fn new(gpio_p: crate::pac::gpio::Gpio) -> Self {
+impl<'d> Gpio<'d> {
+    /// Create the GPIO HAL driver, consuming the GPIO peripheral singleton.
+    ///
+    /// The singleton (`crate::peripherals::Gpio`, obtained from [`crate::efm32_init`]) is moved in
+    /// so a second `Gpio` on the same peripheral cannot be created. Register access is through the
+    /// `crate::pac::GPIO` const, which is the chiptool PAC handle for this single GPIO instance.
+    pub fn new(peri: impl embassy_hal_internal::Peripheral<P = crate::peripherals::Gpio> + 'd) -> Self {
         let mut gpio = Self {
             port_a: Port::new(),
             port_b: Port::new(),
@@ -325,7 +329,7 @@ impl Gpio {
             exti14ctrl: ExtiCtrl::new(),
             exti15ctrl: ExtiCtrl::new(),
 
-            gpio_p,
+            _peri: peri.into_ref(),
         };
 
         gpio.disable_clock();
@@ -343,20 +347,21 @@ impl Gpio {
         self.port_d.reset();
         self.port_f.reset();
 
-        self.gpio_p.em4wuen().write_value(Default::default());
-        self.gpio_p.extifall().write_value(Default::default());
-        self.gpio_p.extilevel().write_value(Default::default());
-        self.gpio_p.extipinselh().write_value(Default::default());
-        self.gpio_p.extipinsell().write_value(Default::default());
-        self.gpio_p.extipselh().write_value(Default::default());
-        self.gpio_p.extipsell().write_value(Default::default());
-        self.gpio_p.ien().write_value(Default::default());
-        self.gpio_p.ifc().write_value(Default::default());
-        self.gpio_p.ifs().write_value(Default::default());
-        self.gpio_p.insense().write_value(Default::default());
-        self.gpio_p.lock().write_value(Default::default());
-        self.gpio_p.routeloc0().write_value(Default::default());
-        self.gpio_p.routepen().write_value(Default::default());
+        let gpio_p = crate::pac::GPIO;
+        gpio_p.em4wuen().write_value(Default::default());
+        gpio_p.extifall().write_value(Default::default());
+        gpio_p.extilevel().write_value(Default::default());
+        gpio_p.extipinselh().write_value(Default::default());
+        gpio_p.extipinsell().write_value(Default::default());
+        gpio_p.extipselh().write_value(Default::default());
+        gpio_p.extipsell().write_value(Default::default());
+        gpio_p.ien().write_value(Default::default());
+        gpio_p.ifc().write_value(Default::default());
+        gpio_p.ifs().write_value(Default::default());
+        gpio_p.insense().write_value(Default::default());
+        gpio_p.lock().write_value(Default::default());
+        gpio_p.routeloc0().write_value(Default::default());
+        gpio_p.routepen().write_value(Default::default());
     }
 
     /// Enable clock for GPIO peripheral

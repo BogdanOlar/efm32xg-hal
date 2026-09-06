@@ -16,9 +16,9 @@ mod tests {
         dma::descriptor::Descriptor,
         dma::Dma,
         gpio::{Gpio, InFilt, OutPp},
+        peripherals::Usart0,
         usart::spi::dma::SpiDma,
         usart::spi::{Config, SpiPins},
-        usart::UsartId,
     };
     use embedded_hal::spi::MODE_2;
 
@@ -46,13 +46,14 @@ mod tests {
     };
 
     #[init]
-    fn init() -> (SpiDma, Crc<u32>) {
+    fn init() -> (SpiDma<'static, Usart0>, Crc<u32>) {
+        let p = efm32xg_hal::efm32_init();
         let crc = CrcDriver::new(efm32xg_hal::pac::GPCRC).into_algo_32(&CRC_32_CKSUM);
-        let gpio = Gpio::new(efm32xg_hal::pac::GPIO);
-        let dma = Dma::init(efm32xg_hal::pac::LDMA);
+        let gpio = Gpio::new(p.Gpio);
+        let dma = Dma::init(p.Ldma);
         let spi = efm32xg_hal::usart::spi::Spi::new(
             SpiPins::new(
-                UsartId::USART0,
+                p.Usart0,
                 gpio.pc8.into_mode::<OutPp>(),
                 gpio.pc6.into_mode::<OutPp>(),
                 gpio.pc7.into_mode::<InFilt>(),
@@ -476,7 +477,7 @@ mod tests {
     /// the harness moves on to the next one. Returns `Ok(())` only if all cases passed.
     #[test]
     #[timeout(60)]
-    fn transfer_u8_dma((mut spi, crc): (SpiDma, Crc<u32>)) -> Result<(), ()> {
+    fn transfer_u8_dma((mut spi, crc): (SpiDma<'static, Usart0>, Crc<u32>)) -> Result<(), ()> {
         let mut failed: usize = 0;
         for (
             i,
@@ -536,7 +537,7 @@ mod tests {
     /// the harness moves on to the next one. Returns `Ok(())` only if all cases passed.
     #[test]
     #[timeout(60)]
-    fn read_u8_dma((mut spi, crc): (SpiDma, Crc<u32>)) -> Result<(), ()> {
+    fn read_u8_dma((mut spi, crc): (SpiDma<'static, Usart0>, Crc<u32>)) -> Result<(), ()> {
         let mut failed: usize = 0;
         for (
             i,
@@ -593,7 +594,7 @@ mod tests {
     /// the harness moves on to the next one. Returns `Ok(())` only if all cases passed.
     #[test]
     #[timeout(60)]
-    fn write_u8_dma((mut spi, crc): (SpiDma, Crc<u32>)) -> Result<(), ()> {
+    fn write_u8_dma((mut spi, crc): (SpiDma<'static, Usart0>, Crc<u32>)) -> Result<(), ()> {
         let mut failed: usize = 0;
         for (
             i,

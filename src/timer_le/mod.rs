@@ -16,12 +16,17 @@ use crate::{
         letimer::vals::{Out0loc, Ufoa0},
         CMU,
     },
+    peripherals, Sealed,
 };
 use core::marker::PhantomData;
 use cortex_m::asm::nop;
 use embedded_hal::digital::OutputPin;
 
-/// Extension trait for Letimer PAC peripheral
+/// Extension trait for the LETIMER peripheral singleton.
+///
+/// Implemented only for [`peripherals::Letimer`]; call it on the singleton obtained from
+/// [`crate::efm32_init`] (e.g. `p.Letimer.into_timer()`), which consumes it so a second driver
+/// cannot be built on the same peripheral.
 pub trait LeTimerExt {
     /// Timer type
     type Timer;
@@ -29,7 +34,8 @@ pub trait LeTimerExt {
     fn into_timer(self) -> Self::Timer;
 }
 
-impl LeTimerExt for efm32xg_pac::letimer::Letimer {
+impl Sealed for peripherals::Letimer {}
+impl LeTimerExt for peripherals::Letimer {
     type Timer = LeTimer;
     fn into_timer(self) -> Self::Timer {
         Self::Timer::new()

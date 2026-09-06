@@ -16,10 +16,11 @@ use crate::{
         },
         port::PortId,
     },
-    usart::{mmio, spi::dma::SpiDma, UsartId},
+    usart::{spi::dma::SpiDma, UsartId, UsartInstance},
 };
 use core::cmp::max;
 use efm32xg_pac::usart::vals::{Clkloc, Cshold, Cssetup, Databits, Parity, Rxloc, Stopbits, Txloc};
+use embassy_hal_internal::{Peripheral, PeripheralRef};
 use embedded_hal::{
     digital::{InputPin, OutputPin},
     spi::{Error, ErrorKind, ErrorType, Mode, Phase, Polarity, SpiBus},
@@ -32,47 +33,50 @@ pub const TX_FILLER_BYTE: u8 = 0xFF;
 
 /// SPI master which implements `SpiBus` trait
 ///
-/// This driver is fully non-generic: the USART peripheral is selected at runtime (via
-/// [`UsartId`]) and the pins are stored in their type-erased [`DynamicPin`] form. All build-time
-/// validity (which pins may serve as CLK/TX/RX, and which USART is used) is enforced at compile
-/// time by the generic [`SpiPins`] builder, and the SPI operating parameters are supplied via the
-/// non-generic [`Config`]. The only way to obtain an `Spi` is through a valid `SpiPins` + `Config`
-/// passed to [`Spi::new`].
-#[derive(Debug)]
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub struct Spi {
-    /// USART peripheral this instance drives
-    id: UsartId,
+/// This driver is generic over the USART peripheral singleton type `T` (obtained from
+/// [`crate::efm32_init`]). The singleton is stored as a [`PeripheralRef`] ownership token;
+/// register access goes through `T::regs()`. The pins are stored in their type-erased
+/// [`DynamicPin`] form. All build-time validity (which pins may serve as CLK/TX/RX) is enforced
+/// at compile time by the generic [`SpiPins`] builder, and the SPI operating parameters are
+/// supplied via the non-generic [`Config`]. The only way to obtain an `Spi` is through a valid
+/// `SpiPins` + `Config` passed to [`Spi::new`].
+pub struct Spi<'d, T: UsartInstance> {
+    peri: PeripheralRef<'d, T>,
     pin_clk: DynamicPin,
     pin_tx: DynamicPin,
     pin_rx: DynamicPin,
 }
 
-impl Spi {
+impl<'d, T: UsartInstance> core::fmt::Debug for Spi<'d, T> {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.debug_struct("Spi").finish_non_exhaustive()
+    }
+}
+
+#[cfg(feature = "defmt")]
+impl<'d, T: UsartInstance> defmt::Format for Spi<'d, T> {
+    fn format(&self, fmt: defmt::Formatter) {
+        defmt::write!(fmt, "Spi")
+    }
+}
+
+impl<'d, T: UsartInstance> Spi<'d, T> {
     /// Create a new SPI instance from a validated [`SpiPins`] pin/peripheral binding and an
     /// initial [`Config`].
     ///
     /// The USART peripheral and pin routing are taken from `pins`, and the SPI [`Mode`],
     /// [`BitOrder`], loopback flag, sample delay and baudrate divider are all applied from
-    /// `config` (via [`Spi::set_config`]). The returned [`Spi`] is non-generic: the peripheral
-    /// is stored at runtime as a [`UsartId`] and the pins are held in their type-erased
-    /// [`DynamicPin`] form.
-    pub fn new(pins: SpiPins, config: &Config) -> Self {
-        let id = pins.id;
-
-        // Enable the clock for this USART
-        mmio::cmu_usart_enable(id);
-        // Reset the USART registers
-        mmio::reset(id);
-
+    /// `config` (via [`Spi::set_config`]). The returned [`Spi`] stores the peripheral singleton
+    /// as an ownership token; register access goes through `T::regs()`.
+    pub fn new(pins: SpiPins<'d, T>, config: &Config) -> Self {
         let mut spi = Spi {
-            id,
+            peri: pins.peri,
             pin_clk: pins.pin_clk,
             pin_tx: pins.pin_tx,
             pin_rx: pins.pin_rx,
         };
 
-        let usart_p = mmio::usartx(id);
+        let usart_p = T::regs();
 
         spi.reset();
 
@@ -145,7 +149,7 @@ impl Spi {
 
     /// Returns the [`UsartId`] of the USART peripheral this instance drives.
     pub fn id(&self) -> UsartId {
-        self.id
+        T::id()
     }
 
     /// Set the SPI loopback flag
@@ -153,7 +157,7 @@ impl Spi {
     /// Only the loopback bit of `CTRL` is touched; the rest of the register (synchronous mode,
     /// bit order, SPI mode, auto-TX, auto-CS, ...) is preserved.
     pub fn set_loopback(&mut self, enabled: bool) {
-        let usart_p = mmio::usartx(self.id);
+        let usart_p = T::regs();
         usart_p.ctrl().modify(|w| match enabled {
             true => w.set_loopbk(true),
             false => w.set_loopbk(false),
@@ -168,7 +172,7 @@ impl Spi {
     ///
     /// See [Reference Manual - 16.5.6](../../../../../doc/efm32pg1-rm.pdf#page=506).
     pub fn set_divider(&mut self, divider: u32) {
-        let usart_p = mmio::usartx(self.id);
+        let usart_p = T::regs();
 
         // The `div` field starts at bit 3, so the register value is `divider << 5`
         // (equivalent to `256 * (fHFPERCLK/(2 * fbr) - 1)` per the reference manual, since the
@@ -186,7 +190,7 @@ impl Spi {
     ///   - [`MODE_2`](`embedded_hal::spi::MODE_2`): CPOL = 1, CPHA = 0
     ///   - [`MODE_3`](`embedded_hal::spi::MODE_3`): CPOL = 1, CPHA = 1
     pub fn set_mode(&mut self, mode: Mode) {
-        let usart_p = mmio::usartx(self.id);
+        let usart_p = T::regs();
 
         usart_p.ctrl().modify(|w| {
             w.set_clkpol(mode.polarity == Polarity::IdleHigh);
@@ -198,7 +202,7 @@ impl Spi {
     ///
     /// See [Reference Manual - 16.5.1](../../../../../doc/efm32pg1-rm.pdf#page=494).
     pub fn set_bit_order(&mut self, bit_order: BitOrder) {
-        let usart_p = mmio::usartx(self.id);
+        let usart_p = T::regs();
         usart_p.ctrl().modify(|w| match bit_order {
             BitOrder::LsbFirst => w.set_msbf(false),
             BitOrder::MsbFirst => w.set_msbf(true),
@@ -211,7 +215,7 @@ impl Spi {
     /// timing margin and allow higher speeds with some slaves. See
     /// [Reference Manual - 16.5.1](../../../../../doc/efm32pg1-rm.pdf#page=494).
     pub fn set_sms_delay(&mut self, enabled: bool) {
-        let usart_p = mmio::usartx(self.id);
+        let usart_p = T::regs();
         usart_p.ctrl().modify(|w| match enabled {
             true => w.set_smsdelay(true),
             false => w.set_smsdelay(false),
@@ -232,12 +236,12 @@ impl Spi {
     }
 
     /// Convert into a Spi implementation which used DMA channels
-    pub fn into_spi_dma(self, tx: DmaChannel, rx: DmaChannel) -> SpiDma {
+    pub fn into_spi_dma(self, tx: DmaChannel<'d>, rx: DmaChannel<'d>) -> SpiDma<'d, T> {
         SpiDma::new(self, tx, rx)
     }
 
     fn reset(&mut self) {
-        let usart_p = mmio::usartx(self.id);
+        let usart_p = T::regs();
 
         // Use CMD first
         usart_p.cmd().write(|w| {
@@ -268,7 +272,7 @@ impl Spi {
         usart_p.routeloc1().write_value(Default::default());
         usart_p.input().write_value(Default::default());
 
-        match self.id {
+        match T::id() {
             // Only USART0 has IrDA
             UsartId::USART0 => usart_p.irctrl().write_value(Default::default()),
             // Only USART1 has I2S
@@ -280,7 +284,7 @@ impl Spi {
         // TODO: maybe calculate a counter based on minimum possible baudrate.
         const MAX_COUNT: u32 = 1_000_000;
         let mut bail_countdown = MAX_COUNT;
-        let usart_p = mmio::usartx(self.id);
+        let usart_p = T::regs();
 
         while !usart_p.status().read().txc() {
             bail_countdown -= 1;
@@ -300,17 +304,16 @@ impl Spi {
 ///   - `PTX` is a pin usable as the SPI MOSI/TX output ([`UsartTxPin`]),
 ///   - `PRX` is a pin usable as the SPI MISO/RX input ([`UsartRxPin`]).
 ///
-/// The USART peripheral is selected at runtime via the [`UsartId`] passed to [`SpiPins::new`]
-/// (the chiptool-generated PAC exposes `USART0`/`USART1` as `pub const` instances of the same
-/// type, so they cannot be distinguished by type). `SpiPins::new` erases the pins into
-/// [`DynamicPin`]s (extracting the routing locations first), so the resulting `SpiPins` is fully
-/// non-generic. `Spi::new` takes it with no trait bounds.
+/// The USART peripheral is selected by passing its singleton (`[`peripherals::Usart0`]` or
+/// `[`peripherals::Usart1`]`, from [`crate::efm32_init`]); the singleton is stored as a
+/// [`PeripheralRef`] and moved into the [`Spi`] driver by [`Spi::new`], so the same peripheral
+/// cannot be used to build a second `Spi`. `SpiPins::new` erases the pins into [`DynamicPin`]s
+/// (extracting the routing locations first), so the pin part of `SpiPins` is fully non-generic.
 ///
 /// `SpiPins` only carries the peripheral and pin routing; the SPI operating mode, baudrate, bit
 /// order, loopback and sample delay are all configured via the [`Config`] passed to [`Spi::new`].
-#[derive(Debug)]
-pub struct SpiPins {
-    id: UsartId,
+pub struct SpiPins<'d, T: UsartInstance> {
+    peri: PeripheralRef<'d, T>,
     pin_clk: DynamicPin,
     pin_tx: DynamicPin,
     pin_rx: DynamicPin,
@@ -319,20 +322,32 @@ pub struct SpiPins {
     rx_loc: u8,
 }
 
-impl SpiPins {
+impl<'d, T: UsartInstance> core::fmt::Debug for SpiPins<'d, T> {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.debug_struct("SpiPins").finish_non_exhaustive()
+    }
+}
+
+impl<'d, T: UsartInstance> SpiPins<'d, T> {
     /// Collect the USART peripheral and its CLK/TX/RX pins for an [`Spi`] driver.
     ///
-    /// The trait bounds guarantee that only pin types valid as SPI CLK/TX/RX are accepted, so the
-    /// returned `SpiPins` always represents a valid pin combination. The pins are type-erased into
-    /// [`DynamicPin`]s and the [`UsartId`] is taken here, so the returned `SpiPins` is non-generic.
-    /// SPI operating parameters (mode, baudrate, ...) are supplied separately via [`Config`] to
-    /// [`Spi::new`].
-    pub fn new<PCLK, PTX, PRX>(id: UsartId, pin_clk: PCLK, pin_tx: PTX, pin_rx: PRX) -> Self
+    /// The USART peripheral is selected by passing its singleton (`[`peripherals::Usart0`]` or
+    /// `[`peripherals::Usart1`]`, from [`crate::efm32_init`]); the singleton is *consumed* (moved
+    /// in) so the same peripheral cannot be used to build a second `Spi`. The trait bounds
+    /// guarantee that only pin types valid as SPI CLK/TX/RX are accepted, so the returned
+    /// `SpiPins` always represents a valid pin combination. The pins are type-erased into
+    /// [`DynamicPin`]s. SPI operating parameters (mode, baudrate, ...) are supplied separately
+    /// via [`Config`] to [`Spi::new`].
+    pub fn new<PCLK, PTX, PRX>(peri: impl Peripheral<P = T> + 'd, pin_clk: PCLK, pin_tx: PTX, pin_rx: PRX) -> Self
     where
         PCLK: OutputPin + UsartClkPin + PinInfo,
         PTX: OutputPin + UsartTxPin + PinInfo,
         PRX: InputPin + UsartRxPin + PinInfo,
     {
+        // Enable the clock for this USART and reset its registers.
+        T::enable_clock();
+        T::reset();
+
         // Extract the routing locations before erasing, since `UsartClkPin`/`UsartTxPin`/
         // `UsartRxPin` are only implemented for `Pin` types.
         let clk_loc = pin_clk.loc();
@@ -340,7 +355,7 @@ impl SpiPins {
         let rx_loc = pin_rx.loc();
 
         Self {
-            id,
+            peri: peri.into_ref(),
             pin_clk: DynamicPin::new(pin_clk.port(), pin_clk.pin(), pin_clk.mode()),
             pin_tx: DynamicPin::new(pin_tx.port(), pin_tx.pin(), pin_tx.mode()),
             pin_rx: DynamicPin::new(pin_rx.port(), pin_rx.pin(), pin_rx.mode()),
@@ -359,9 +374,9 @@ impl SpiPins {
     ///   - the RX pin is a valid SPI RX pin and is in an input mode.
     ///
     /// Returns [`Err(SpiError::InvalidPin)`] if any pin is invalid for its role or in the wrong
-    /// mode. The USART peripheral is specified by [`UsartId`] (runtime, not generic).
+    /// mode.
     pub fn try_new(
-        id: UsartId,
+        peri: impl Peripheral<P = T> + 'd,
         pin_clk: DynamicPin,
         pin_tx: DynamicPin,
         pin_rx: DynamicPin,
@@ -379,7 +394,7 @@ impl SpiPins {
         }
 
         Ok(Self {
-            id,
+            peri: peri.into_ref(),
             pin_clk,
             pin_tx,
             pin_rx,
@@ -538,18 +553,18 @@ impl Error for SpiError {
 }
 
 // Implementations for `ErrorType` to be used by `SpiBus` `embedded-hal` trait
-impl ErrorType for Spi {
+impl<'d, T: UsartInstance> ErrorType for Spi<'d, T> {
     type Error = SpiError;
 }
 
-impl SpiBus<u8> for Spi {
+impl<'d, T: UsartInstance> SpiBus<u8> for Spi<'d, T> {
     fn read(&mut self, words: &mut [u8]) -> Result<(), Self::Error> {
         self.transfer(words, &[])
     }
 
     fn write(&mut self, words: &[u8]) -> Result<(), Self::Error> {
         let mut words_iter = words.iter();
-        let usart_p = mmio::usartx(self.id);
+        let usart_p = T::regs();
 
         // This closure  waits until there are at least 2 (out of 3) bytes available in the TX buffer
         // The first position in the TX Buffer is the Shift Register, which is not accessible through registers
@@ -595,7 +610,7 @@ impl SpiBus<u8> for Spi {
         let mut tx_iter = write.iter();
         let mut rx_iter = read.iter_mut();
         let mut rx_discard = 0;
-        let usart_p = mmio::usartx(self.id);
+        let usart_p = T::regs();
 
         for (txo, rxo) in (0..max_byte_count).map(|_| (tx_iter.next(), rx_iter.next())) {
             let tx_byte = match txo {
@@ -620,7 +635,7 @@ impl SpiBus<u8> for Spi {
 
     fn transfer_in_place(&mut self, words: &mut [u8]) -> Result<(), Self::Error> {
         let mut words_iter = words.iter_mut();
-        let usart_p = mmio::usartx(self.id);
+        let usart_p = T::regs();
 
         while let Some(b0) = words_iter.next() {
             if let Some(b1) = words_iter.next() {

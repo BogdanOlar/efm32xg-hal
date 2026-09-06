@@ -19,6 +19,7 @@ use efm32xg_hal::{
         list::{DescList, FinMode},
         Dma, DmaChannel, DmaError,
     },
+    efm32_init,
     prelude::*,
     timer_le::efemb::Ticker,
 };
@@ -28,12 +29,12 @@ use embassy_time::Timer as _;
 
 #[entry]
 fn main() -> ! {
-    let p = pac::Peripherals::take().unwrap();
+    let p = efm32_init();
     // Initialize the embassy time driver (for defmt timestamps)
-    let _clocks = p.cmu.split().with_lfa_clk(LfClockSource::LfRco);
+    let _clocks = p.Cmu.split().with_lfa_clk(LfClockSource::LfRco);
     Ticker::init();
 
-    let dma = Dma::init(p.ldma);
+    let dma = Dma::init(p.Ldma);
 
     let ret = simple_inter_channel_synchronization(dma.ch0, dma.ch1);
     if let Err(e) = &ret {

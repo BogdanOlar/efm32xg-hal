@@ -27,6 +27,31 @@ mod sealed {
 
 pub(crate) use sealed::Sealed;
 
+// Generate the peripheral singleton types (the `peripherals` module) and the `Peripherals`
+// struct with a one-time `take()` guard, using the `embassy-hal-internal` macros. Each instance
+// (`Timer0`, `Timer1`, `Cmu`, `Gpio`, ...) is a distinct, uninstantiable zero-sized type obtained
+// only from [`efm32_init`]. Drivers consume the relevant singleton by moving it out of the
+// `Peripherals` struct, so two drivers cannot be built on the same peripheral instance.
+//
+// TODO: this list is currently hard-coded for the `efm32pg1b` chip pinned in `Cargo.toml`. It
+// should eventually be generated per-chip (and pins added) like embassy-stm32's `build.rs`.
+embassy_hal_internal::peripherals!(
+    Acmp0, Acmp1, Adc, Idac, Gpio, I2c, Usart0, Usart1, Timer0, Timer1, Gpcrc, Cryotimer, Rtcc,
+    Letimer, Leuart, Pcnt, Wdog, Msc, Fpueh, Ldma, Emu, Cmu, Rmu, Prs, Crypto,
+);
+
+pub use embassy_hal_internal::{Peripheral, PeripheralRef};
+
+/// Initialize the HAL and return the peripheral singletons.
+///
+/// This may be called only once; a second call panics. Move the relevant fields out of the
+/// returned [`Peripherals`] struct and pass them to driver constructors, e.g.
+/// `Timer::new(p.Timer0, TimerDivider::Div1024)`. Because each peripheral is a distinct type
+/// and the field is moved, two drivers cannot be created for the same instance.
+pub fn efm32_init() -> Peripherals {
+    Peripherals::take()
+}
+
 /// Convenience module which exports the most used types for each module
 pub mod prelude {
     pub use crate::{

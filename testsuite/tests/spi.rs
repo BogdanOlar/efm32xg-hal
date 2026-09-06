@@ -15,8 +15,8 @@ mod tests {
         dma::descriptor::Descriptor,
         dma::Dma,
         gpio::{Gpio, InFilt, OutPp},
+        peripherals::Usart0,
         usart::spi::{BitOrder, Config, Spi, SpiPins},
-        usart::UsartId,
     };
     use embedded_hal::spi::{MODE_0, MODE_2};
 
@@ -44,25 +44,26 @@ mod tests {
     };
 
     #[init]
-    fn init() -> (Spi, Crc<u32>, Dma) {
+    fn init() -> (Spi<'static, Usart0>, Crc<u32>, Dma<'static>) {
+        let p = efm32xg_hal::efm32_init();
         let crc = CrcDriver::new(efm32xg_hal::pac::GPCRC).into_algo_32(&CRC_32_CKSUM);
-        let gpio = Gpio::new(efm32xg_hal::pac::GPIO);
+        let gpio = Gpio::new(p.Gpio);
         let spi = Spi::new(
             SpiPins::new(
-                UsartId::USART0,
+                p.Usart0,
                 gpio.pc8.into_mode::<OutPp>(),
                 gpio.pc6.into_mode::<OutPp>(),
                 gpio.pc7.into_mode::<InFilt>(),
             ),
             &Config::new(MODE_2, 1).with_loopback(true),
         );
-        let dma = Dma::init(efm32xg_hal::pac::LDMA);
+        let dma = Dma::init(p.Ldma);
         (spi, crc, dma)
     }
 
     #[test]
     #[timeout(5)]
-    fn transfer_u8_sync((mut spi, crc, _dma): (Spi, Crc<u32>, Dma)) {
+    fn transfer_u8_sync((mut spi, crc, _dma): (Spi<'static, Usart0>, Crc<u32>, Dma<'static>)) {
         // Set the `dst` length to a multiple of 1
         let mut dst_buf: [u8; Descriptor::MAX_TRANSFER_UNITS] = [0; _];
         let dst_len = dst_buf.len();
@@ -74,7 +75,7 @@ mod tests {
 
     #[test]
     #[timeout(5)]
-    fn transfer_u8_sync_tx_desc_1_rx_1((mut spi, crc, _dma): (Spi, Crc<u32>, Dma)) {
+    fn transfer_u8_sync_tx_desc_1_rx_1((mut spi, crc, _dma): (Spi<'static, Usart0>, Crc<u32>, Dma<'static>)) {
         // Size of slices which will be tested
         // TX
         const SRC_LEN: usize = Descriptor::MAX_TRANSFER_UNITS;
@@ -97,7 +98,7 @@ mod tests {
     /// verify that transfers still succeed.
     #[test]
     #[timeout(5)]
-    fn set_config_runtime((mut spi, crc, _dma): (Spi, Crc<u32>, Dma)) {
+    fn set_config_runtime((mut spi, crc, _dma): (Spi<'static, Usart0>, Crc<u32>, Dma<'static>)) {
         let mut dst_buf: [u8; Descriptor::MAX_TRANSFER_UNITS] = [0; _];
         let dst_len = dst_buf.len();
         let src = &SRC_BUF;
@@ -126,7 +127,7 @@ mod tests {
     /// via [`Spi::set_config`]) does not break the transfer path.
     #[test]
     #[timeout(5)]
-    fn bit_order((mut spi, crc, _dma): (Spi, Crc<u32>, Dma)) {
+    fn bit_order((mut spi, crc, _dma): (Spi<'static, Usart0>, Crc<u32>, Dma<'static>)) {
         let mut dst_buf: [u8; Descriptor::MAX_TRANSFER_UNITS] = [0; _];
         let dst_len = dst_buf.len();
         let src = &SRC_BUF;

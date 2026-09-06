@@ -31,7 +31,7 @@ pub trait CmuExt {
     fn split(self) -> Self::Parts;
 }
 
-impl CmuExt for efm32xg_pac::cmu::Cmu {
+impl CmuExt for crate::peripherals::Cmu {
     type Parts = Clocks;
 
     fn split(self) -> Self::Parts {

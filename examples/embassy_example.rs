@@ -2,7 +2,8 @@
 #![no_std]
 
 use efm32xg_hal::{
-    cmu::{HfClockPrescaler, HfClockSource, LfClockSource},
+    cmu::{CmuExt, HfClockPrescaler, HfClockSource, LfClockSource},
+    efm32_init,
     prelude::*,
     timer_le::efemb::Ticker,
 };
@@ -15,9 +16,9 @@ const TASK_COUNT: usize = 10;
 
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
-    let p = pac::Peripherals::take().unwrap();
+    let p = efm32_init();
     let clocks = p
-        .cmu
+        .Cmu
         .split()
         // Prescaling the HF clock to the lowest frequency possible, to stress test the scheduler algorithm
         // .with_hf_clk(HfClockSource::HfRco, HfClockPrescaler::Div32)

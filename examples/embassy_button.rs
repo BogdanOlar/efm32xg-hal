@@ -3,6 +3,7 @@
 
 use defmt_rtt as _;
 use efm32xg_hal::{
+    efm32_init,
     gpio::{dynamic::DynamicPin, efemb::AsyncInputPin},
     pac::{self, Interrupt, NVIC},
     prelude::*,
@@ -16,14 +17,14 @@ use panic_halt as _;
 
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
-    let p = pac::Peripherals::take().unwrap();
+    let p = efm32_init();
 
     // Initialize the embassy time driver in order to get logging timestamps (LfAClk is ncecessary for LeTimer0)
-    let _clocks = p.cmu.split().with_lfa_clk(LfClockSource::LfRco);
+    let _clocks = p.Cmu.split().with_lfa_clk(LfClockSource::LfRco);
     Ticker::init();
 
     // Initialize GPIO
-    let gpio = Gpio::new(p.gpio);
+    let gpio = Gpio::new(p.Gpio);
 
     // ---- NVIC ----
     unsafe {

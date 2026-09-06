@@ -11,36 +11,75 @@ use crate::{
         },
         CMU, TIMER0, TIMER1,
     },
+    peripherals, Sealed,
 };
-use core::{convert::Infallible, marker::PhantomData};
+use core::{convert::Infallible, fmt, marker::PhantomData};
+use embassy_hal_internal::{Peripheral, PeripheralRef};
 use embedded_hal::{
     delay::DelayNs,
     digital::OutputPin,
     pwm::{ErrorType, SetDutyCycle},
 };
 
-/// Reconstruct the chiptool PAC timer handle from its base address.
+/// A timer peripheral instance usable by the HAL timer driver.
 ///
-/// `crate::pac::timer::Timer` is a `Copy` pointer wrapper, so the HAL stores only the pointer
-/// value and rebuilds the handle on demand. This keeps the driver non-generic while still
-/// addressing the right `TIMERn` instance.
-#[inline(always)]
-const fn pac_timer(peri_ptr: usize) -> crate::pac::timer::Timer {
-    unsafe { crate::pac::timer::Timer::from_ptr(peri_ptr as *mut ()) }
+/// This is a sealed trait implemented only for the singleton types in [`crate::peripherals`]:
+/// [`peripherals::Timer0`] and [`peripherals::Timer1`]. Because each instance is a distinct,
+/// uninstantiable type obtained only from [`crate::efm32_init`], a timer peripheral cannot be
+/// driven by two [`Timer`] instances at once — the singleton is moved into the first driver and
+/// any second use fails to compile.
+pub trait TimerInstance: Sealed + Peripheral<P = Self> + 'static {
+    /// Returns the chiptool PAC register-block handle for this timer instance.
+    fn regs() -> crate::pac::timer::Timer;
+    /// Enables the HF peripheral clock for this timer instance.
+    fn enable_clock();
+}
+
+impl Sealed for peripherals::Timer0 {}
+impl TimerInstance for peripherals::Timer0 {
+    fn regs() -> crate::pac::timer::Timer {
+        TIMER0
+    }
+    fn enable_clock() {
+        CMU.hfperclken0().modify(|w| w.set_timer0(true));
+    }
+}
+
+impl Sealed for peripherals::Timer1 {}
+impl TimerInstance for peripherals::Timer1 {
+    fn regs() -> crate::pac::timer::Timer {
+        TIMER1
+    }
+    fn enable_clock() {
+        CMU.hfperclken0().modify(|w| w.set_timer1(true));
+    }
 }
 
 /// Timer
-#[derive(Debug)]
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub struct Timer {
-    peri_ptr: usize,
+pub struct Timer<'d, T: TimerInstance> {
+    peri: PeripheralRef<'d, T>,
 }
 
-impl Timer {
+impl<'d, T: TimerInstance> fmt::Debug for Timer<'d, T> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_struct("Timer").finish_non_exhaustive()
+    }
+}
+
+#[cfg(feature = "defmt")]
+impl<'d, T: TimerInstance> defmt::Format for Timer<'d, T> {
+    fn format(&self, fmt: defmt::Formatter) {
+        defmt::write!(fmt, "Timer")
+    }
+}
+
+impl<'d, T: TimerInstance> Timer<'d, T> {
     /// FIXME: take a (timer counter) frequency as parameter and do a best effort to set the timer prescaler and the
     ///        `top` value to get as close as possible
-    pub fn new(peri: crate::pac::timer::Timer, clock_divider: TimerDivider) -> Self {
-        peri.ctrl().write(|w| {
+    pub fn new(peri: impl Peripheral<P = T> + 'd, clock_divider: TimerDivider) -> Self {
+        let timer = T::regs();
+
+        timer.ctrl().write(|w| {
             w.set_presc(clock_divider);
             w.set_mode(CtrlMode::Up);
         });
@@ -48,10 +87,10 @@ impl Timer {
         // Set the resolution of the counter to MAX - 1 because if the timer is going to be split into channels and
         // any of them is used as PWM, we need to allow the PWM channel to set its compare value to TOP + 1 in order
         // to achieve 100% duty cycle
-        peri.top().write(|w| w.set_top(u16::MAX - 1));
+        timer.top().write(|w| w.set_top(u16::MAX - 1));
 
         Self {
-            peri_ptr: peri.as_ptr() as usize,
+            peri: peri.into_ref(),
         }
     }
 
@@ -59,49 +98,64 @@ impl Timer {
     pub fn into_channels(
         self,
     ) -> (
-        TimerChannel<0>,
-        TimerChannel<1>,
-        TimerChannel<2>,
-        TimerChannel<3>,
+        TimerChannel<'d, T, 0>,
+        TimerChannel<'d, T, 1>,
+        TimerChannel<'d, T, 2>,
+        TimerChannel<'d, T, 3>,
     ) {
-        // Enable the timer peripheral clock. The two instances share a register block type, so
-        // pick the clock-enable bit from the peripheral's address.
-        let peri_ptr = self.peri_ptr;
-        if peri_ptr == TIMER0.as_ptr() as usize {
-            CMU.hfperclken0().modify(|w| w.set_timer0(true));
-        } else if peri_ptr == TIMER1.as_ptr() as usize {
-            CMU.hfperclken0().modify(|w| w.set_timer1(true));
-        } else {
-            unreachable!();
-        }
+        // Enable the timer peripheral clock for this instance.
+        T::enable_clock();
 
         // Enable timer
-        pac_timer(peri_ptr).cmd().write(|w| w.set_start(true));
+        T::regs().cmd().write(|w| w.set_start(true));
 
-        // Split the peripheral into its channels
+        // Split the peripheral into its channels. Each channel drives a distinct
+        // capture/compare channel, and the `Timer` is consumed, so the original singleton
+        // cannot be reused.
+        // SAFETY: the clones are disjoint by channel number; the source `peri` is not
+        // reused after this call.
         (
-            TimerChannel { peri_ptr },
-            TimerChannel { peri_ptr },
-            TimerChannel { peri_ptr },
-            TimerChannel { peri_ptr },
+            TimerChannel {
+                peri: unsafe { self.peri.clone_unchecked() },
+            },
+            TimerChannel {
+                peri: unsafe { self.peri.clone_unchecked() },
+            },
+            TimerChannel {
+                peri: unsafe { self.peri.clone_unchecked() },
+            },
+            TimerChannel {
+                peri: unsafe { self.peri.clone_unchecked() },
+            },
         )
     }
 }
 
 /// Timer channel
-#[derive(Debug)]
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub struct TimerChannel<const CN: u8> {
-    peri_ptr: usize,
+pub struct TimerChannel<'d, T: TimerInstance, const CN: u8> {
+    peri: PeripheralRef<'d, T>,
 }
 
-impl<const CN: u8> TimerChannel<CN> {
+impl<'d, T: TimerInstance, const CN: u8> fmt::Debug for TimerChannel<'d, T, CN> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_struct("TimerChannel").finish_non_exhaustive()
+    }
+}
+
+#[cfg(feature = "defmt")]
+impl<'d, T: TimerInstance, const CN: u8> defmt::Format for TimerChannel<'d, T, CN> {
+    fn format(&self, fmt: defmt::Formatter) {
+        defmt::write!(fmt, "TimerChannel")
+    }
+}
+
+impl<'d, T: TimerInstance, const CN: u8> TimerChannel<'d, T, CN> {
     /// Convert timer channel to a PWM
-    pub fn into_pwm<PIN>(self, pin: PIN) -> TimerChannelPwm<CN, PIN>
+    pub fn into_pwm<PIN>(self, pin: PIN) -> TimerChannelPwm<'d, T, CN, PIN>
     where
         PIN: OutputPin + TimerPin<CN>,
     {
-        let timer = pac_timer(self.peri_ptr);
+        let timer = T::regs();
 
         match CN {
             0 => {
@@ -152,14 +206,14 @@ impl<const CN: u8> TimerChannel<CN> {
         }
 
         TimerChannelPwm {
-            peri_ptr: self.peri_ptr,
+            peri: self.peri,
             _pwm_pin: PhantomData,
         }
     }
 
     /// Convert timer to a Delay
-    pub fn into_delay(self, clocks: &Clocks) -> TimerChannelDelay<CN> {
-        let timer = pac_timer(self.peri_ptr);
+    pub fn into_delay(self, clocks: &Clocks) -> TimerChannelDelay<'d, T, CN> {
+        let timer = T::regs();
         let timer_div: u8 = timer.ctrl().read().presc().to_bits();
         let timer_freq = clocks.hf_per_clk() / (timer_div + 1) as u32;
 
@@ -180,21 +234,34 @@ impl<const CN: u8> TimerChannel<CN> {
         };
 
         TimerChannelDelay {
-            peri_ptr: self.peri_ptr,
+            peri: self.peri,
             timer_freq,
         }
     }
 }
 
 /// Specialize the timer channel to be used for delays
-#[derive(Debug)]
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub struct TimerChannelDelay<const CN: u8> {
-    peri_ptr: usize,
+pub struct TimerChannelDelay<'d, T: TimerInstance, const CN: u8> {
+    peri: PeripheralRef<'d, T>,
     timer_freq: u32,
 }
 
-impl<const CN: u8> DelayNs for TimerChannelDelay<CN> {
+impl<'d, T: TimerInstance, const CN: u8> fmt::Debug for TimerChannelDelay<'d, T, CN> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_struct("TimerChannelDelay")
+            .field("timer_freq", &self.timer_freq)
+            .finish_non_exhaustive()
+    }
+}
+
+#[cfg(feature = "defmt")]
+impl<'d, T: TimerInstance, const CN: u8> defmt::Format for TimerChannelDelay<'d, T, CN> {
+    fn format(&self, fmt: defmt::Formatter) {
+        defmt::write!(fmt, "TimerChannelDelay")
+    }
+}
+
+impl<'d, T: TimerInstance, const CN: u8> DelayNs for TimerChannelDelay<'d, T, CN> {
     fn delay_ns(&mut self, ns: u32) {
         let microsecs = ns / 1000;
 
@@ -206,7 +273,7 @@ impl<const CN: u8> DelayNs for TimerChannelDelay<CN> {
         //        A better accuracy may be obtained if we implement `DelayNs` for `Timer` instead of `TimerChannelDelay`
         //        since we can control when the timer starts.
         if microsecs > 0 {
-            let timer = pac_timer(self.peri_ptr);
+            let timer = T::regs();
             let ticks_left = self.timer_freq as u64 * microsecs as u64 / 1_000_000_u64;
             let reload_max = timer.top().read().top() as u32;
             let reference_count = timer.cnt().read().cnt() as u32;
@@ -278,31 +345,44 @@ impl<const CN: u8> DelayNs for TimerChannelDelay<CN> {
 }
 
 /// PWM
-#[derive(Debug)]
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub struct TimerChannelPwm<const CN: u8, PIN>
+pub struct TimerChannelPwm<'d, T: TimerInstance, const CN: u8, PIN>
 where
     PIN: OutputPin + TimerPin<CN>,
 {
-    peri_ptr: usize,
+    peri: PeripheralRef<'d, T>,
     _pwm_pin: PhantomData<PIN>,
 }
 
-impl<const CN: u8, PIN> SetDutyCycle for TimerChannelPwm<CN, PIN>
+impl<'d, T: TimerInstance, const CN: u8, PIN> fmt::Debug for TimerChannelPwm<'d, T, CN, PIN>
+where
+    PIN: OutputPin + TimerPin<CN>,
+{
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_struct("TimerChannelPwm").finish_non_exhaustive()
+    }
+}
+
+#[cfg(feature = "defmt")]
+impl<'d, T: TimerInstance, const CN: u8, PIN> defmt::Format for TimerChannelPwm<'d, T, CN, PIN>
+where
+    PIN: OutputPin + TimerPin<CN>,
+{
+    fn format(&self, fmt: defmt::Formatter) {
+        defmt::write!(fmt, "TimerChannelPwm")
+    }
+}
+
+impl<'d, T: TimerInstance, const CN: u8, PIN> SetDutyCycle for TimerChannelPwm<'d, T, CN, PIN>
 where
     PIN: OutputPin + TimerPin<CN>,
 {
     fn max_duty_cycle(&self) -> u16 {
         // A 100% duty cycle is obtained by setting the channel Capture/Compare value to `top + 1`
-        pac_timer(self.peri_ptr)
-            .top()
-            .read()
-            .top()
-            .saturating_add(1)
+        T::regs().top().read().top().saturating_add(1)
     }
 
     fn set_duty_cycle(&mut self, duty: u16) -> Result<(), Self::Error> {
-        let timer = pac_timer(self.peri_ptr);
+        let timer = T::regs();
 
         match CN {
             0 => timer.cc0_ccvb().write(|w| w.set_ccvb(duty)),
@@ -316,7 +396,7 @@ where
     }
 }
 
-impl<const CN: u8, PIN> ErrorType for TimerChannelPwm<CN, PIN>
+impl<'d, T: TimerInstance, const CN: u8, PIN> ErrorType for TimerChannelPwm<'d, T, CN, PIN>
 where
     PIN: OutputPin + TimerPin<CN>,
 {

@@ -6,7 +6,7 @@
 use cortex_m::asm::nop;
 use cortex_m_rt::entry;
 use efm32xg_hal::cmu::{CmuExt, DbgClockSource, HfClockPrescaler, HfClockSource};
-use efm32xg_hal::pac;
+use efm32xg_hal::{efm32_init, pac};
 
 // pick a panicking behavior
 use panic_halt as _; // you can put a breakpoint on `rust_begin_unwind` to catch panics
@@ -19,10 +19,9 @@ use defmt_rtt as _;
 fn main() -> ! {
     let _core_p = cortex_m::Peripherals::take().unwrap();
 
-    let p = pac::Peripherals::take().unwrap();
+    let p = efm32_init();
 
-    let cmu = unsafe { efm32xg_hal::pac::Cmu::steal() };
-    let selected_hf_clk = cmu.hfclkstatus().read().selected().variant();
+    let selected_hf_clk = pac::CMU.hfclkstatus().read().selected().variant();
     defmt::println!("{}", selected_hf_clk);
 
     // Safety startup delay, in case the clock test goes wrong
@@ -33,7 +32,7 @@ fn main() -> ! {
     defmt::println!("Safe end");
 
     let clocks = p
-        .cmu
+        .Cmu
         .split()
         .with_hf_clk(HfClockSource::HfRco, HfClockPrescaler::Div10)
         .with_dbg_clk(DbgClockSource::HfClk);
@@ -60,7 +59,7 @@ fn main() -> ! {
     //     .with_dbg_clk(DbgClockSource::HfClk);
 
     defmt::println!("Clocks: {}", clocks);
-    let selected_hf_clk = cmu.hfclkstatus().read().selected().variant();
+    let selected_hf_clk = pac::CMU.hfclkstatus().read().selected().variant();
     defmt::println!("{}", selected_hf_clk);
 
     loop {}

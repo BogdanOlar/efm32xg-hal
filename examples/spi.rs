@@ -4,7 +4,7 @@
 #![no_std]
 
 use cortex_m_rt::entry;
-use efm32xg_hal::prelude::*;
+use efm32xg_hal::{efm32_init, prelude::*};
 
 // pick a panicking behavior
 use panic_halt as _; // you can put a breakpoint on `rust_begin_unwind` to catch panics
@@ -18,16 +18,16 @@ use defmt_rtt as _;
 fn main() -> ! {
     let _core_p = cortex_m::Peripherals::take().unwrap();
 
-    let p = pac::Peripherals::take().unwrap();
+    let p = efm32_init();
 
-    let gpio = Gpio::new(p.gpio);
+    let gpio = Gpio::new(p.Gpio);
 
     let tx = gpio.pc6.into_mode::<OutPp>();
     let rx = gpio.pc7.into_mode::<InFilt>();
     let clk = gpio.pc8.into_mode::<OutPp>();
 
     let mut spi = Spi::new(
-        SpiPins::new(p.usart0, clk, tx, rx),
+        SpiPins::new(p.Usart0, clk, tx, rx),
         &Config::new(spi::MODE_2, 0),
     );
     let write_orig = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];

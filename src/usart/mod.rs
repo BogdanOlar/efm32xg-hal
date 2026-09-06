@@ -4,15 +4,16 @@
 
 pub mod spi;
 
+use crate::{peripherals, Sealed};
+use embassy_hal_internal::Peripheral;
+
 /// Identifies which USART peripheral a driver instance is bound to.
 ///
 /// `Spi` is a specialisation of the USART peripheral, so this runtime identifier lives at the
 /// `usart` module level. Drivers such as [`spi::Spi`](crate::usart::spi::Spi) store a `UsartId`
 /// (rather than a raw `u8`) to make the peripheral selection self-documenting and exhaustive at
-/// every `match`. Callers pass the `UsartId` explicitly when constructing the driver (e.g. via
-/// [`spi::SpiPins::new`](crate::usart::spi::SpiPins::new)), since the chiptool-generated PAC exposes
-/// `USART0` and `USART1` as `pub const` instances of the same `efm32xg_pac::usart::Usart` type
-/// and therefore cannot distinguish them by type.
+/// every `match`. The [`UsartInstance`] trait maps a peripheral singleton
+/// (`[`peripherals::Usart0`]` / `[`peripherals::Usart1`]`) to its `UsartId` and register block.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[repr(u8)]
@@ -21,6 +22,56 @@ pub enum UsartId {
     USART0 = 0,
     /// USART1.
     USART1 = 1,
+}
+
+/// A USART peripheral instance usable by the HAL USART/SPI drivers.
+///
+/// Sealed and implemented only for the singleton types [`peripherals::Usart0`] and
+/// [`peripherals::Usart1`], obtained from [`crate::efm32_init`]. Drivers such as
+/// [`spi::Spi`](crate::usart::spi::Spi) are generic over `T: UsartInstance` and store the
+/// peripheral singleton (via [`PeripheralRef`](embassy_hal_internal::PeripheralRef)), so the same
+/// peripheral cannot be used to build two drivers.
+pub trait UsartInstance: Sealed + Peripheral<P = Self> + 'static {
+    /// Returns the runtime [`UsartId`] for this instance (used e.g. for DMA source selection).
+    fn id() -> UsartId;
+    /// Returns the chiptool PAC register-block handle for this USART instance.
+    fn regs() -> crate::pac::usart::Usart;
+    /// Enables the HF peripheral clock for this USART instance.
+    fn enable_clock();
+    /// Resets the USART peripheral's registers to their default state.
+    fn reset();
+}
+
+impl Sealed for peripherals::Usart0 {}
+impl UsartInstance for peripherals::Usart0 {
+    fn id() -> UsartId {
+        UsartId::USART0
+    }
+    fn regs() -> crate::pac::usart::Usart {
+        crate::pac::USART0
+    }
+    fn enable_clock() {
+        crate::pac::CMU.hfperclken0().modify(|w| w.set_usart0(true));
+    }
+    fn reset() {
+        crate::usart::mmio::reset(UsartId::USART0);
+    }
+}
+
+impl Sealed for peripherals::Usart1 {}
+impl UsartInstance for peripherals::Usart1 {
+    fn id() -> UsartId {
+        UsartId::USART1
+    }
+    fn regs() -> crate::pac::usart::Usart {
+        crate::pac::USART1
+    }
+    fn enable_clock() {
+        crate::pac::CMU.hfperclken0().modify(|w| w.set_usart1(true));
+    }
+    fn reset() {
+        crate::usart::mmio::reset(UsartId::USART1);
+    }
 }
 
 /// Helper module for accessing USART register blocks

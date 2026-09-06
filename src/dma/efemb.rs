@@ -14,7 +14,7 @@ use embassy_sync::waitqueue::AtomicWaker;
 /// Embassy task wakers for each DMA channel
 static DMA_WAKERS: [AtomicWaker; CHANNEL_COUNT] = [const { AtomicWaker::new() }; _];
 
-impl DmaChannel {
+impl<'d> DmaChannel<'d> {
     /// Perform an async DMA transfer with the given Descriptor.
     ///
     /// If `with_sw_trigger` is set then the DMA transfer will immediatelly be software-triggered.
@@ -46,17 +46,17 @@ impl DmaChannel {
     }
 }
 
-struct TransferFuture<'tl, P: TransferParams<'tl>> {
-    ch_transfer: ChannelTransfer<'tl, P>,
+struct TransferFuture<'tl, 'd, P: TransferParams<'tl>> {
+    ch_transfer: ChannelTransfer<'tl, 'd, P>,
 }
 
-impl<'tl, P: TransferParams<'tl>> TransferFuture<'tl, P> {
-    fn new(ch_transfer: ChannelTransfer<'tl, P>) -> Self {
+impl<'tl, 'd, P: TransferParams<'tl>> TransferFuture<'tl, 'd, P> {
+    fn new(ch_transfer: ChannelTransfer<'tl, 'd, P>) -> Self {
         Self { ch_transfer }
     }
 }
 
-impl<'tl, P: TransferParams<'tl>> core::future::Future for TransferFuture<'tl, P> {
+impl<'tl, 'd, P: TransferParams<'tl>> core::future::Future for TransferFuture<'tl, 'd, P> {
     type Output = DmaResult;
 
     fn poll(

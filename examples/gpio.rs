@@ -5,15 +5,15 @@
 
 use cortex_m_rt::entry;
 use defmt_rtt as _;
-use efm32xg_hal::prelude::*;
+use efm32xg_hal::{efm32_init, prelude::*};
 use panic_probe as _;
 
 #[entry]
 fn main() -> ! {
     let _core_p = cortex_m::Peripherals::take().unwrap();
-    let p = pac::Peripherals::take().unwrap();
+    let p = efm32_init();
 
-    let mut gpio = Gpio::new(p.gpio);
+    let mut gpio = Gpio::new(p.Gpio);
 
     gpio.port_f.set_drive_strength(DriveStrength::Strong);
     gpio.port_f.set_drive_strength_alt(DriveStrength::Strong);

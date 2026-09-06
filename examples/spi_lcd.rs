@@ -7,8 +7,8 @@
 use cortex_m_rt::entry;
 use efm32xg_hal::{
     cmu::{CmuExt, HfClockPrescaler, HfClockSource},
+    efm32_init,
     gpio::{Gpio, InFilt, OutPp},
-    pac,
     timer::{Timer, TimerDivider},
     usart::spi::{Config, Spi, SpiPins},
 };
@@ -25,12 +25,12 @@ use ls013b7dh03::{prelude::*, WIDTH};
 #[entry]
 fn main() -> ! {
     let _core_p = cortex_m::Peripherals::take().unwrap();
-    let p = pac::Peripherals::take().unwrap();
+    let p = efm32_init();
     let clocks = p
-        .cmu
+        .Cmu
         .split()
         .with_hf_clk(HfClockSource::HfRco, HfClockPrescaler::Div4);
-    let gpio = Gpio::new(p.gpio);
+    let gpio = Gpio::new(p.Gpio);
 
     // Let this App take control of display (this is a `UG154: EFM32 Pearl Gecko Starter Kit` paticularity)
     let _ = gpio.pd15.into_mode::<OutPp>().set_high();
@@ -38,7 +38,7 @@ fn main() -> ! {
 
     let mut spi = Spi::new(
         SpiPins::new(
-            p.usart1,
+            p.Usart1,
             gpio.pc8.into_mode::<OutPp>(),
             gpio.pc6.into_mode::<OutPp>(),
             gpio.pc7.into_mode::<InFilt>(),
@@ -55,7 +55,7 @@ fn main() -> ! {
     let mut disp = Ls013b7dh03::new(spi, cs, led0, &mut buffer);
 
     let (tim0ch0, tim0ch1, _tim0ch2, _tim0ch3) =
-        Timer::new(pac::TIMER0, TimerDivider::Div1024).into_channels();
+        Timer::new(p.Timer0, TimerDivider::Div1024).into_channels();
 
     let mut com_inv = tim0ch1.into_pwm(disp_com);
     let _ret_pwm = com_inv.set_duty_cycle(10);

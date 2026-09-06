@@ -25,7 +25,7 @@ mod tests {
 
     #[test]
     #[timeout(5)]
-    fn transfer_u8_dma_0((crc, mut dma): (Crc<u32>, Dma)) {
+    fn transfer_u8_dma_0((crc, mut dma): (Crc<u32>, Dma<'static>)) {
         const LEN: usize = 0;
         let src = &SRC_BUF_U8[..LEN];
         let mut dst = [0u8; LEN];
@@ -35,7 +35,7 @@ mod tests {
 
     #[test]
     #[timeout(5)]
-    fn transfer_u8_dma_1((crc, mut dma): (Crc<u32>, Dma)) {
+    fn transfer_u8_dma_1((crc, mut dma): (Crc<u32>, Dma<'static>)) {
         const LEN: usize = 1;
         let src = &SRC_BUF_U8[..LEN];
         let mut dst = [0u8; LEN];
@@ -45,7 +45,7 @@ mod tests {
 
     #[test]
     #[timeout(5)]
-    fn transfer_u8_dma_desc_1((crc, mut dma): (Crc<u32>, Dma)) {
+    fn transfer_u8_dma_desc_1((crc, mut dma): (Crc<u32>, Dma<'static>)) {
         const LEN: usize = MTU;
         let src = &SRC_BUF_U8[..LEN];
         let mut dst = [0u8; LEN];
@@ -55,7 +55,7 @@ mod tests {
 
     #[test]
     #[timeout(5)]
-    fn transfer_u8_dma_desc_2((crc, mut dma): (Crc<u32>, Dma)) {
+    fn transfer_u8_dma_desc_2((crc, mut dma): (Crc<u32>, Dma<'static>)) {
         const LEN: usize = MTU * 2;
         let src = &SRC_BUF_U8[..LEN];
         let mut dst = [0u8; LEN];
@@ -65,7 +65,7 @@ mod tests {
 
     #[test]
     #[timeout(5)]
-    fn transfer_u8_dma_desc_4((crc, mut dma): (Crc<u32>, Dma)) {
+    fn transfer_u8_dma_desc_4((crc, mut dma): (Crc<u32>, Dma<'static>)) {
         const LEN: usize = MTU * 4;
         let src = &SRC_BUF_U8[..LEN];
         let mut dst = [0u8; LEN];
@@ -75,7 +75,7 @@ mod tests {
 
     #[test]
     #[timeout(5)]
-    fn transfer_u8_dma_desc_max_min_1((crc, mut dma): (Crc<u32>, Dma)) {
+    fn transfer_u8_dma_desc_max_min_1((crc, mut dma): (Crc<u32>, Dma<'static>)) {
         const LEN: usize = MTU * (MAX_RAM_TRANSFERS - 1);
         let src = &SRC_BUF_U8[..LEN];
         let mut dst = [0u8; LEN];
@@ -85,7 +85,7 @@ mod tests {
 
     #[test]
     #[timeout(15)]
-    fn transfer_u8_dma_max_ram((crc, mut dma): (Crc<u32>, Dma)) {
+    fn transfer_u8_dma_max_ram((crc, mut dma): (Crc<u32>, Dma<'static>)) {
         const LEN: usize = MTU * MAX_RAM_TRANSFERS;
         let src = &SRC_BUF_U8[..LEN];
         let mut dst = [0u8; LEN];
@@ -97,7 +97,7 @@ mod tests {
 
     #[test]
     #[timeout(5)]
-    fn transfer_u16_dma_0((crc, mut dma): (Crc<u32>, Dma)) {
+    fn transfer_u16_dma_0((crc, mut dma): (Crc<u32>, Dma<'static>)) {
         const LEN: usize = 0;
         let src = &SRC_BUF_U16[..LEN];
         let mut dst = [0u16; LEN];
@@ -107,7 +107,7 @@ mod tests {
 
     #[test]
     #[timeout(5)]
-    fn transfer_u16_dma_1((crc, mut dma): (Crc<u32>, Dma)) {
+    fn transfer_u16_dma_1((crc, mut dma): (Crc<u32>, Dma<'static>)) {
         const LEN: usize = 1;
         let src = &SRC_BUF_U16[..LEN];
         let mut dst = [0u16; LEN];
@@ -117,7 +117,7 @@ mod tests {
 
     #[test]
     #[timeout(5)]
-    fn transfer_u16_dma_desc_1((crc, mut dma): (Crc<u32>, Dma)) {
+    fn transfer_u16_dma_desc_1((crc, mut dma): (Crc<u32>, Dma<'static>)) {
         const LEN: usize = MTU / 2;
         let src = &SRC_BUF_U16[..LEN];
         let mut dst = [0u16; LEN];
@@ -127,7 +127,7 @@ mod tests {
 
     #[test]
     #[timeout(5)]
-    fn transfer_u16_dma_desc_2((crc, mut dma): (Crc<u32>, Dma)) {
+    fn transfer_u16_dma_desc_2((crc, mut dma): (Crc<u32>, Dma<'static>)) {
         const LEN: usize = MTU;
         let src = &SRC_BUF_U16[..LEN];
         let mut dst = [0u16; LEN];
@@ -137,7 +137,7 @@ mod tests {
 
     #[test]
     #[timeout(5)]
-    fn transfer_u16_dma_desc_4((crc, mut dma): (Crc<u32>, Dma)) {
+    fn transfer_u16_dma_desc_4((crc, mut dma): (Crc<u32>, Dma<'static>)) {
         const LEN: usize = MTU * 2;
         let src = &SRC_BUF_U16[..LEN];
         let mut dst = [0u16; LEN];
@@ -149,7 +149,7 @@ mod tests {
 
     #[test]
     #[timeout(5)]
-    fn transfer_u32_dma_0((crc, mut dma): (Crc<u32>, Dma)) {
+    fn transfer_u32_dma_0((crc, mut dma): (Crc<u32>, Dma<'static>)) {
         const LEN: usize = 0;
         let src = &SRC_BUF_U32[..LEN];
         let mut dst = [0u32; LEN];
@@ -159,7 +159,7 @@ mod tests {
 
     #[test]
     #[timeout(5)]
-    fn transfer_u32_dma_1((crc, mut dma): (Crc<u32>, Dma)) {
+    fn transfer_u32_dma_1((crc, mut dma): (Crc<u32>, Dma<'static>)) {
         const LEN: usize = 1;
         let src = &SRC_BUF_U32[..LEN];
         let mut dst = [0u32; LEN];
@@ -169,7 +169,7 @@ mod tests {
 
     #[test]
     #[timeout(5)]
-    fn transfer_u32_dma_desc_1((crc, mut dma): (Crc<u32>, Dma)) {
+    fn transfer_u32_dma_desc_1((crc, mut dma): (Crc<u32>, Dma<'static>)) {
         const LEN: usize = MTU / 4;
         let src = &SRC_BUF_U32[..LEN];
         let mut dst = [0u32; LEN];
@@ -179,7 +179,7 @@ mod tests {
 
     #[test]
     #[timeout(5)]
-    fn transfer_u32_dma_desc_2((crc, mut dma): (Crc<u32>, Dma)) {
+    fn transfer_u32_dma_desc_2((crc, mut dma): (Crc<u32>, Dma<'static>)) {
         const LEN: usize = MTU / 2;
         let src = &SRC_BUF_U32[..LEN];
         let mut dst = [0u32; LEN];
@@ -189,7 +189,7 @@ mod tests {
 
     #[test]
     #[timeout(5)]
-    fn transfer_u32_dma_desc_4((crc, mut dma): (Crc<u32>, Dma)) {
+    fn transfer_u32_dma_desc_4((crc, mut dma): (Crc<u32>, Dma<'static>)) {
         const LEN: usize = MTU;
         let src = &SRC_BUF_U32[..LEN];
         let mut dst = [0u32; LEN];
@@ -201,7 +201,7 @@ mod tests {
 
     #[test]
     #[timeout(5)]
-    fn transfer_struct_4b_dma_1((crc, mut dma): (Crc<u32>, Dma)) {
+    fn transfer_struct_4b_dma_1((crc, mut dma): (Crc<u32>, Dma<'static>)) {
         const LEN: usize = 1;
         let src = &SRC_BUF_SENSOR[..LEN];
         let mut dst = [SensorReading {
@@ -214,7 +214,7 @@ mod tests {
 
     #[test]
     #[timeout(5)]
-    fn transfer_struct_4b_dma_128((crc, mut dma): (Crc<u32>, Dma)) {
+    fn transfer_struct_4b_dma_128((crc, mut dma): (Crc<u32>, Dma<'static>)) {
         const LEN: usize = 128;
         let src = &SRC_BUF_SENSOR[..LEN];
         let mut dst = [SensorReading {
@@ -227,7 +227,7 @@ mod tests {
 
     #[test]
     #[timeout(5)]
-    fn transfer_struct_4b_dma_desc_1((crc, mut dma): (Crc<u32>, Dma)) {
+    fn transfer_struct_4b_dma_desc_1((crc, mut dma): (Crc<u32>, Dma<'static>)) {
         const LEN: usize = MTU / 4;
         let src = &SRC_BUF_SENSOR[..LEN];
         let mut dst = [SensorReading {
@@ -240,7 +240,7 @@ mod tests {
 
     #[test]
     #[timeout(5)]
-    fn transfer_struct_8b_dma_1((crc, mut dma): (Crc<u32>, Dma)) {
+    fn transfer_struct_8b_dma_1((crc, mut dma): (Crc<u32>, Dma<'static>)) {
         const LEN: usize = 1;
         let src = &SRC_BUF_CONFIG[..LEN];
         let mut dst = [ConfigBlock {
@@ -253,7 +253,7 @@ mod tests {
 
     #[test]
     #[timeout(5)]
-    fn transfer_struct_8b_dma_128((crc, mut dma): (Crc<u32>, Dma)) {
+    fn transfer_struct_8b_dma_128((crc, mut dma): (Crc<u32>, Dma<'static>)) {
         const LEN: usize = 128;
         let src = &SRC_BUF_CONFIG[..LEN];
         let mut dst = [ConfigBlock {
@@ -266,7 +266,7 @@ mod tests {
 
     #[test]
     #[timeout(5)]
-    fn transfer_struct_8b_dma_desc_1((crc, mut dma): (Crc<u32>, Dma)) {
+    fn transfer_struct_8b_dma_desc_1((crc, mut dma): (Crc<u32>, Dma<'static>)) {
         const LEN: usize = MTU / 8;
         let src = &SRC_BUF_CONFIG[..LEN];
         let mut dst = [ConfigBlock {
@@ -279,7 +279,7 @@ mod tests {
 
     #[test]
     #[timeout(5)]
-    fn transfer_struct_13b_dma_1((crc, mut dma): (Crc<u32>, Dma)) {
+    fn transfer_struct_13b_dma_1((crc, mut dma): (Crc<u32>, Dma<'static>)) {
         const LEN: usize = 1;
         let src = &SRC_BUF_TELEMETRY[..LEN];
         let mut dst = [Telemetry {
@@ -294,7 +294,7 @@ mod tests {
 
     #[test]
     #[timeout(5)]
-    fn transfer_struct_13b_dma_128((crc, mut dma): (Crc<u32>, Dma)) {
+    fn transfer_struct_13b_dma_128((crc, mut dma): (Crc<u32>, Dma<'static>)) {
         const LEN: usize = 128;
         let src = &SRC_BUF_TELEMETRY[..LEN];
         let mut dst = [Telemetry {
@@ -421,9 +421,10 @@ mod tests {
     };
 
     #[init]
-    fn init() -> (Crc<u32>, Dma) {
+    fn init() -> (Crc<u32>, Dma<'static>) {
+        let p = efm32xg_hal::efm32_init();
         let crc = CrcDriver::new(efm32xg_hal::pac::GPCRC).into_algo_32(&CRC_32_CKSUM);
-        let dma = Dma::init(efm32xg_hal::pac::LDMA);
+        let dma = Dma::init(p.Ldma);
         (crc, dma)
     }
 }

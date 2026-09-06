@@ -7,10 +7,12 @@ use cortex_m_rt::entry;
 use efm32xg_hal::{
     crc::{algos::CRC_32_CKSUM, CrcDriver},
     dma::{descriptor::Descriptor, Dma},
+    efm32_init,
+    pac,
+    Peripherals,
     prelude::*,
 };
 
-use efm32xg_pac::Peripherals;
 use embedded_hal::spi::MODE_2;
 // pick a panicking behavior
 use panic_halt as _; // you can put a breakpoint on `rust_begin_unwind` to catch panics
@@ -22,17 +24,17 @@ use defmt_rtt as _;
 
 #[entry]
 fn main() -> ! {
-    // transfer_u8_dma_long_symmetric(Peripherals::take().unwrap());
-    transfer_u8_dma_short_asymmetric_rx_longer(Peripherals::take().unwrap());
+    // transfer_u8_dma_long_symmetric(efm32_init());
+    transfer_u8_dma_short_asymmetric_rx_longer(efm32_init());
     loop {}
 }
 
 fn transfer_u8_dma_short_asymmetric_rx_longer(p: Peripherals) {
-    let crc = CrcDriver::new(p.gpcrc).into_algo_32(&CRC_32_CKSUM);
-    let gpio = Gpio::new(p.gpio);
+    let crc = CrcDriver::new(pac::GPCRC).into_algo_32(&CRC_32_CKSUM);
+    let gpio = Gpio::new(p.Gpio);
     let mut spi = Spi::new(
         SpiPins::new(
-            p.usart0,
+            p.Usart0,
             gpio.pc8.into_mode::<OutPp>(),
             gpio.pc6.into_mode::<OutPp>(),
             gpio.pc7.into_mode::<InFilt>(),
@@ -40,7 +42,7 @@ fn transfer_u8_dma_short_asymmetric_rx_longer(p: Peripherals) {
         &Config::new(MODE_2, 1).with_loopback(true),
     );
 
-    let dma = Dma::init(p.ldma);
+    let dma = Dma::init(p.Ldma);
     let mut spi = spi.into_spi_dma(dma.ch0, dma.ch1);
 
     // Set the `dst` length to a multiple of 1
@@ -81,11 +83,11 @@ fn transfer_u8_dma_short_asymmetric_rx_longer(p: Peripherals) {
 /// SPI transfer uses more than one descriptor for both TX and RX
 /// TX and RX slices have the same size
 fn transfer_u8_dma_long_symmetric(p: Peripherals) {
-    let crc = CrcDriver::new(p.gpcrc).into_algo_32(&CRC_32_CKSUM);
-    let gpio = Gpio::new(p.gpio);
+    let crc = CrcDriver::new(pac::GPCRC).into_algo_32(&CRC_32_CKSUM);
+    let gpio = Gpio::new(p.Gpio);
     let mut spi = Spi::new(
         SpiPins::new(
-            p.usart0,
+            p.Usart0,
             gpio.pc8.into_mode::<OutPp>(),
             gpio.pc6.into_mode::<OutPp>(),
             gpio.pc7.into_mode::<InFilt>(),
@@ -93,7 +95,7 @@ fn transfer_u8_dma_long_symmetric(p: Peripherals) {
         &Config::new(MODE_2, 1).with_loopback(true),
     );
 
-    let dma = Dma::init(p.ldma);
+    let dma = Dma::init(p.Ldma);
     let mut spi = spi.into_spi_dma(dma.ch1, dma.ch2);
 
     // Set the `dst` length to a multiple of 1
