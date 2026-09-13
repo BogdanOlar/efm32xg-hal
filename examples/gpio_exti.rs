@@ -8,7 +8,7 @@ use critical_section::Mutex;
 use defmt::info;
 use defmt_rtt as _;
 use efm32xg_hal::{
-    efm32_init,
+    init,
     gpio::{
         dynamic::DynamicPin,
         exti::{self, ExtiEdge, ExtiId},
@@ -27,7 +27,7 @@ static LED1: Mutex<RefCell<Option<DynamicPin>>> = Mutex::new(RefCell::new(None))
 #[entry]
 fn main() -> ! {
     let _core_p = cortex_m::Peripherals::take().unwrap();
-    let p = efm32_init();
+    let p = init();
 
     // Initialize the embassy time driver (for defmt timestamps)
     let _clocks = Cmu::new(p.Cmu).with_lfa_clk(LfClockSource::LfRco).freeze();

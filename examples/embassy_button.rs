@@ -3,8 +3,8 @@
 
 use defmt_rtt as _;
 use efm32xg_hal::{
-    efm32_init,
     gpio::{dynamic::DynamicPin, efemb::AsyncInputPin},
+    init,
     pac::{self, Interrupt, NVIC},
     prelude::*,
     timer_le::efemb::Ticker,
@@ -17,7 +17,7 @@ use panic_halt as _;
 
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
-    let p = efm32_init();
+    let p = init();
 
     // Initialize the embassy time driver in order to get logging timestamps (LfAClk is ncecessary for LeTimer0)
     let _clocks = Cmu::new(p.Cmu).with_lfa_clk(LfClockSource::LfRco).freeze();

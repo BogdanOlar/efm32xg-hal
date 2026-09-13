@@ -7,7 +7,7 @@
 use cortex_m_rt::entry;
 use efm32xg_hal::{
     cmu::{Cmu, HfClockPrescaler, HfClockSource},
-    efm32_init,
+    init,
     gpio::{Gpio, InFilt, OutPp},
     timer::{Timer, TimerDivider},
     usart::spi::{Config, Spi, SpiPins},
@@ -25,7 +25,7 @@ use ls013b7dh03::{prelude::*, WIDTH};
 #[entry]
 fn main() -> ! {
     let _core_p = cortex_m::Peripherals::take().unwrap();
-    let p = efm32_init();
+    let p = init();
     let clocks = Cmu::new(p.Cmu)
         .with_hf_clk(HfClockSource::HfRco, HfClockPrescaler::Div4).freeze();
     let gpio = Gpio::new(p.Gpio);

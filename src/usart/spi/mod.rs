@@ -35,7 +35,7 @@ pub const TX_FILLER_BYTE: u8 = 0xFF;
 ///
 /// This driver is generic over the USART peripheral singleton type `T` (obtained from
 /// [`crate::efm32_init`]). The singleton is stored as a [`PeripheralRef`] ownership token;
-/// register access goes through `T::regs()`. The pins are stored in their type-erased
+/// register access goes through `self.peri.regs()`. The pins are stored in their type-erased
 /// [`DynamicPin`] form. All build-time validity (which pins may serve as CLK/TX/RX) is enforced
 /// at compile time by the generic [`SpiPins`] builder, and the SPI operating parameters are
 /// supplied via the non-generic [`Config`]. The only way to obtain an `Spi` is through a valid
@@ -56,7 +56,7 @@ impl<'d, T: UsartInstance> Spi<'d, T> {
     /// The USART peripheral and pin routing are taken from `pins`, and the SPI [`Mode`],
     /// [`BitOrder`], loopback flag, sample delay and baudrate divider are all applied from
     /// `config` (via [`Spi::set_config`]). The returned [`Spi`] stores the peripheral singleton
-    /// as an ownership token; register access goes through `T::regs()`.
+    /// as an ownership token; register access goes through `self.peri.regs()`.
     pub fn new(pins: SpiPins<'d, T>, config: &Config) -> Self {
         let mut spi = Spi {
             peri: pins.peri,
@@ -65,7 +65,7 @@ impl<'d, T: UsartInstance> Spi<'d, T> {
             pin_rx: pins.pin_rx,
         };
 
-        let usart_p = T::regs();
+        let usart_p = spi.peri.regs();
 
         spi.reset();
 
@@ -136,17 +136,12 @@ impl<'d, T: UsartInstance> Spi<'d, T> {
         (self.pin_clk, self.pin_tx, self.pin_rx)
     }
 
-    /// Returns the [`UsartId`] of the USART peripheral this instance drives.
-    pub fn id(&self) -> UsartId {
-        T::id()
-    }
-
     /// Set the SPI loopback flag
     ///
     /// Only the loopback bit of `CTRL` is touched; the rest of the register (synchronous mode,
     /// bit order, SPI mode, auto-TX, auto-CS, ...) is preserved.
     pub fn set_loopback(&mut self, enabled: bool) {
-        let usart_p = T::regs();
+        let usart_p = self.peri.regs();
         usart_p.ctrl().modify(|w| match enabled {
             true => w.set_loopbk(true),
             false => w.set_loopbk(false),
@@ -161,7 +156,7 @@ impl<'d, T: UsartInstance> Spi<'d, T> {
     ///
     /// See [Reference Manual - 16.5.6](../../../../../doc/efm32pg1-rm.pdf#page=506).
     pub fn set_divider(&mut self, divider: u32) {
-        let usart_p = T::regs();
+        let usart_p = self.peri.regs();
 
         // The `div` field starts at bit 3, so the register value is `divider << 5`
         // (equivalent to `256 * (fHFPERCLK/(2 * fbr) - 1)` per the reference manual, since the
@@ -179,7 +174,7 @@ impl<'d, T: UsartInstance> Spi<'d, T> {
     ///   - [`MODE_2`](`embedded_hal::spi::MODE_2`): CPOL = 1, CPHA = 0
     ///   - [`MODE_3`](`embedded_hal::spi::MODE_3`): CPOL = 1, CPHA = 1
     pub fn set_mode(&mut self, mode: Mode) {
-        let usart_p = T::regs();
+        let usart_p = self.peri.regs();
 
         usart_p.ctrl().modify(|w| {
             w.set_clkpol(mode.polarity == Polarity::IdleHigh);
@@ -191,7 +186,7 @@ impl<'d, T: UsartInstance> Spi<'d, T> {
     ///
     /// See [Reference Manual - 16.5.1](../../../../../doc/efm32pg1-rm.pdf#page=494).
     pub fn set_bit_order(&mut self, bit_order: BitOrder) {
-        let usart_p = T::regs();
+        let usart_p = self.peri.regs();
         usart_p.ctrl().modify(|w| match bit_order {
             BitOrder::LsbFirst => w.set_msbf(false),
             BitOrder::MsbFirst => w.set_msbf(true),
@@ -204,7 +199,7 @@ impl<'d, T: UsartInstance> Spi<'d, T> {
     /// timing margin and allow higher speeds with some slaves. See
     /// [Reference Manual - 16.5.1](../../../../../doc/efm32pg1-rm.pdf#page=494).
     pub fn set_sms_delay(&mut self, enabled: bool) {
-        let usart_p = T::regs();
+        let usart_p = self.peri.regs();
         usart_p.ctrl().modify(|w| match enabled {
             true => w.set_smsdelay(true),
             false => w.set_smsdelay(false),
@@ -240,7 +235,7 @@ impl<'d, T: UsartInstance> Spi<'d, T> {
     }
 
     fn reset(&mut self) {
-        let usart_p = T::regs();
+        let usart_p = self.peri.regs();
 
         // Use CMD first
         usart_p.cmd().write(|w| {
@@ -271,11 +266,11 @@ impl<'d, T: UsartInstance> Spi<'d, T> {
         usart_p.routeloc1().write_value(Default::default());
         usart_p.input().write_value(Default::default());
 
-        match T::id() {
+        match self.peri.id() {
             // Only USART0 has IrDA
-            UsartId::USART0 => usart_p.irctrl().write_value(Default::default()),
+            UsartId::Usart0 => usart_p.irctrl().write_value(Default::default()),
             // Only USART1 has I2S
-            UsartId::USART1 => usart_p.i2sctrl().write_value(Default::default()),
+            UsartId::Usart1 => usart_p.i2sctrl().write_value(Default::default()),
         }
     }
 
@@ -283,7 +278,7 @@ impl<'d, T: UsartInstance> Spi<'d, T> {
         // TODO: maybe calculate a counter based on minimum possible baudrate.
         const MAX_COUNT: u32 = 1_000_000;
         let mut bail_countdown = MAX_COUNT;
-        let usart_p = T::regs();
+        let usart_p = self.peri.regs();
 
         while !usart_p.status().read().txc() {
             bail_countdown -= 1;
@@ -340,8 +335,10 @@ impl<'d, T: UsartInstance> SpiPins<'d, T> {
         PRX: InputPin + UsartRxPin + PinInfo,
     {
         // Enable the clock for this USART and reset its registers.
-        T::enable_clock();
-        T::reset();
+        peri.enable_clock();
+
+        // TODO: handle reset
+        // peri.reset();
 
         // Extract the routing locations before erasing, since `UsartClkPin`/`UsartTxPin`/
         // `UsartRxPin` are only implemented for `Pin` types.
@@ -350,7 +347,7 @@ impl<'d, T: UsartInstance> SpiPins<'d, T> {
         let rx_loc = pin_rx.loc();
 
         Self {
-            peri: peri,
+            peri,
             pin_clk: DynamicPin::new(pin_clk.port(), pin_clk.pin(), pin_clk.mode()),
             pin_tx: DynamicPin::new(pin_tx.port(), pin_tx.pin(), pin_tx.mode()),
             pin_rx: DynamicPin::new(pin_rx.port(), pin_rx.pin(), pin_rx.mode()),
@@ -389,7 +386,7 @@ impl<'d, T: UsartInstance> SpiPins<'d, T> {
         }
 
         Ok(Self {
-            peri: peri,
+            peri,
             pin_clk,
             pin_tx,
             pin_rx,
@@ -559,7 +556,7 @@ impl<'d, T: UsartInstance> SpiBus<u8> for Spi<'d, T> {
 
     fn write(&mut self, words: &[u8]) -> Result<(), Self::Error> {
         let mut words_iter = words.iter();
-        let usart_p = T::regs();
+        let usart_p = self.peri.regs();
 
         // This closure  waits until there are at least 2 (out of 3) bytes available in the TX buffer
         // The first position in the TX Buffer is the Shift Register, which is not accessible through registers
@@ -605,7 +602,7 @@ impl<'d, T: UsartInstance> SpiBus<u8> for Spi<'d, T> {
         let mut tx_iter = write.iter();
         let mut rx_iter = read.iter_mut();
         let mut rx_discard = 0;
-        let usart_p = T::regs();
+        let usart_p = self.peri.regs();
 
         for (txo, rxo) in (0..max_byte_count).map(|_| (tx_iter.next(), rx_iter.next())) {
             let tx_byte = match txo {
@@ -630,7 +627,7 @@ impl<'d, T: UsartInstance> SpiBus<u8> for Spi<'d, T> {
 
     fn transfer_in_place(&mut self, words: &mut [u8]) -> Result<(), Self::Error> {
         let mut words_iter = words.iter_mut();
-        let usart_p = T::regs();
+        let usart_p = self.peri.regs();
 
         while let Some(b0) = words_iter.next() {
             if let Some(b1) = words_iter.next() {

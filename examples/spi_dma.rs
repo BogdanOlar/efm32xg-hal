@@ -7,7 +7,7 @@ use cortex_m_rt::entry;
 use efm32xg_hal::{
     crc::{algos::CRC_32_CKSUM, CrcDriver},
     dma::{descriptor::Descriptor, Dma},
-    efm32_init,
+    init,
     pac,
     Peripherals,
     prelude::*,
@@ -25,7 +25,7 @@ use defmt_rtt as _;
 #[entry]
 fn main() -> ! {
     // transfer_u8_dma_long_symmetric(efm32_init());
-    transfer_u8_dma_short_asymmetric_rx_longer(efm32_init());
+    transfer_u8_dma_short_asymmetric_rx_longer(init());
     loop {}
 }
 

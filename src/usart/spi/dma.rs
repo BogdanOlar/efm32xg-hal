@@ -37,7 +37,7 @@ impl<'d, T: UsartInstance> SpiDma<'d, T> {
         tx.reset();
         rx.reset();
 
-        let (tx_sel, rx_sel) = Self::dma_sources(T::id());
+        let (tx_sel, rx_sel) = Self::dma_sources(spi.peri.id());
         tx.set_peripheral_req(tx_sel);
         rx.set_peripheral_req(rx_sel);
 
@@ -164,7 +164,7 @@ impl<'d, T: UsartInstance> SpiDma<'d, T> {
         #[cfg(feature = "debug-spi-dma-defmt-info")]
         info!("UNIT {}", unit);
 
-        let usart_p = T::regs();
+        let usart_p = self.spi.peri.regs();
         let mut tx_list = DescList::new(&mut self.tx_descriptors);
         let mut rx_list = DescList::new(&mut self.rx_descriptors);
 
@@ -281,10 +281,10 @@ impl<'d, T: UsartInstance> SpiDma<'d, T> {
 
     /// Helper function to get the appropriate peripheral DMA channel trigger sources based on
     /// the USART peripheral [`UsartId`]. Returns `(tx_source, rx_source)`.
-    pub(crate) const fn dma_sources(id: UsartId) -> (ChReqSel, ChReqSel) {
+    const fn dma_sources(id: UsartId) -> (ChReqSel, ChReqSel) {
         match id {
-            UsartId::USART0 => (ChReqSel::Usart0TxBl, ChReqSel::Usart0RxDataAvl),
-            UsartId::USART1 => (ChReqSel::Usart1TxBl, ChReqSel::Usart1RxDataAvl),
+            UsartId::Usart0 => (ChReqSel::Usart0TxBl, ChReqSel::Usart0RxDataAvl),
+            UsartId::Usart1 => (ChReqSel::Usart1TxBl, ChReqSel::Usart1RxDataAvl),
         }
     }
 }
@@ -331,9 +331,7 @@ pub struct SpiTransfer<'stl, TXP: TransferParams<'stl>, RXP: TransferParams<'stl
     rx_res: Option<DmaResult>,
 }
 
-impl<'stl, TXP: TransferParams<'stl>, RXP: TransferParams<'stl>>
-    SpiTransfer<'stl, TXP, RXP>
-{
+impl<'stl, TXP: TransferParams<'stl>, RXP: TransferParams<'stl>> SpiTransfer<'stl, TXP, RXP> {
     fn new(tx: ChannelTransfer<'stl, TXP>, rx: ChannelTransfer<'stl, RXP>) -> Self {
         Self {
             tx,

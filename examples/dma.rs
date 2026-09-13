@@ -7,7 +7,7 @@ use defmt::{error, info};
 use defmt_rtt as _;
 use efm32xg_hal::{
     dma::{Dma, DmaChannel},
-    efm32_init,
+    init,
     prelude::*,
     timer_le::efemb::Ticker,
 };
@@ -26,7 +26,7 @@ const TRANSFER_UNIT_COUNT: usize = 0x800 * 4 + 5;
 
 #[entry]
 fn main() -> ! {
-    let p = efm32_init();
+    let p = init();
     let dma = Dma::init(p.Ldma);
 
     // Initialize the embassy time driver (for defmt timestamps)

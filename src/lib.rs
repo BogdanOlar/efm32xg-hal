@@ -48,7 +48,7 @@ pub use embassy_hal_internal::{Peri, PeripheralType};
 /// returned [`Peripherals`] struct and pass them to driver constructors, e.g.
 /// `Timer::new(p.Timer0, TimerDivider::Div1024)`. Because each peripheral is a distinct type
 /// and the field is moved, two drivers cannot be created for the same instance.
-pub fn efm32_init() -> Peripherals {
+pub fn init() -> Peripherals {
     Peripherals::take()
 }
 

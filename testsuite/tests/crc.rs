@@ -11,7 +11,7 @@ mod tests {
 
     #[init]
     fn init() -> CrcDriver {
-        let p = efm32xg_hal::efm32_init();
+        let p = efm32xg_hal::init();
         CrcDriver::new(p.Gpcrc)
     }
 

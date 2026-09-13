@@ -8,7 +8,7 @@ use critical_section::Mutex;
 use defmt::info;
 use defmt_rtt as _;
 use efm32xg_hal::{
-    efm32_init,
+    init,
     gpio::exti::{self, ExtiEdge, ExtiId},
     pac::{Interrupt, NVIC},
     prelude::*,
@@ -23,7 +23,7 @@ static BTN0_CHANNEL: Mutex<RefCell<Option<bool>>> = Mutex::new(RefCell::new(None
 #[entry]
 fn main() -> ! {
     let mut core_p = cortex_m::Peripherals::take().unwrap();
-    let p = efm32_init();
+    let p = init();
 
     // ---- NVIC ----
     unsafe {

@@ -87,7 +87,7 @@ mod tests {
         // LFRCO at 32.768 kHz, matching the `efemb-timdrv-letim0-hz-32_768` feature) and the HfClk must
         // come from an HF source so that LeTimer0's `Ticker::init()` doesn't fault. See the warning in
         // [`Ticker::init`].
-        let p = efm32xg_hal::efm32_init();
+        let p = efm32xg_hal::init();
         let _clocks = Cmu::new(p.Cmu).with_lfa_clk(LfClockSource::LfRco).freeze();
         Ticker::init();
 

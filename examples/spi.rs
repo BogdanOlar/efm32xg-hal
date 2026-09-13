@@ -4,7 +4,7 @@
 #![no_std]
 
 use cortex_m_rt::entry;
-use efm32xg_hal::{efm32_init, prelude::*};
+use efm32xg_hal::{init, prelude::*};
 
 // pick a panicking behavior
 use panic_halt as _; // you can put a breakpoint on `rust_begin_unwind` to catch panics
@@ -18,7 +18,7 @@ use defmt_rtt as _;
 fn main() -> ! {
     let _core_p = cortex_m::Peripherals::take().unwrap();
 
-    let p = efm32_init();
+    let p = init();
 
     let gpio = Gpio::new(p.Gpio);
 
