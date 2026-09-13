@@ -7,10 +7,10 @@
 use cortex_m_rt::entry;
 use efm32xg_hal::{
     cmu::{Cmu, HfClockPrescaler, HfClockSource},
-    init,
     gpio::{Gpio, InFilt, OutPp},
+    init,
     timer::{Timer, TimerDivider},
-    usart::spi::{Config, Spi, SpiPins},
+    usart::spi::{Config, Spi, SpiParts},
 };
 
 use embedded_hal::{delay::DelayNs, digital::OutputPin, pwm::SetDutyCycle};
@@ -27,15 +27,16 @@ fn main() -> ! {
     let _core_p = cortex_m::Peripherals::take().unwrap();
     let p = init();
     let clocks = Cmu::new(p.Cmu)
-        .with_hf_clk(HfClockSource::HfRco, HfClockPrescaler::Div4).freeze();
+        .with_hf_clk(HfClockSource::HfRco, HfClockPrescaler::Div4)
+        .freeze();
     let gpio = Gpio::new(p.Gpio);
 
     // Let this App take control of display (this is a `UG154: EFM32 Pearl Gecko Starter Kit` paticularity)
     let _ = gpio.pd15.into_mode::<OutPp>().set_high();
     // let _ = gpio.pd15.into_output().with_push_pull().build().set_high();
 
-    let mut spi = Spi::new(
-        SpiPins::new(
+    let mut spi = Spi::new_blocking(
+        SpiParts::new(
             p.Usart1,
             gpio.pc8.into_mode::<OutPp>(),
             gpio.pc6.into_mode::<OutPp>(),

@@ -7,10 +7,9 @@ use cortex_m_rt::entry;
 use efm32xg_hal::{
     crc::{algos::CRC_32_CKSUM, CrcDriver},
     dma::{descriptor::Descriptor, Dma},
-    init,
-    pac,
-    Peripherals,
+    init, pac,
     prelude::*,
+    Peripherals,
 };
 
 use embedded_hal::spi::MODE_2;
@@ -32,8 +31,8 @@ fn main() -> ! {
 fn transfer_u8_dma_short_asymmetric_rx_longer(p: Peripherals) {
     let crc = CrcDriver::new(p.Gpcrc).into_algo_32(&CRC_32_CKSUM);
     let gpio = Gpio::new(p.Gpio);
-    let mut spi = Spi::new(
-        SpiPins::new(
+    let mut spi = Spi::new_blocking(
+        SpiParts::new(
             p.Usart0,
             gpio.pc8.into_mode::<OutPp>(),
             gpio.pc6.into_mode::<OutPp>(),
@@ -85,8 +84,8 @@ fn transfer_u8_dma_short_asymmetric_rx_longer(p: Peripherals) {
 fn transfer_u8_dma_long_symmetric(p: Peripherals) {
     let crc = CrcDriver::new(p.Gpcrc).into_algo_32(&CRC_32_CKSUM);
     let gpio = Gpio::new(p.Gpio);
-    let mut spi = Spi::new(
-        SpiPins::new(
+    let mut spi = Spi::new_blocking(
+        SpiParts::new(
             p.Usart0,
             gpio.pc8.into_mode::<OutPp>(),
             gpio.pc6.into_mode::<OutPp>(),

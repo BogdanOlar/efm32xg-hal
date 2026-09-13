@@ -329,8 +329,14 @@ mod tests {
         let mut dst4 = [0u8; LEN];
 
         // Start both transfers (DMA starts immediately, non-blocking)
-        let transfer0 = dma.ch0.memory_transfer(src, &mut dst0).expect("ch0 memory_transfer");
-        let transfer4 = dma.ch4.memory_transfer(src, &mut dst4).expect("ch4 memory_transfer");
+        let transfer0 = dma
+            .ch0
+            .memory_transfer(src, &mut dst0)
+            .expect("ch0 memory_transfer");
+        let transfer4 = dma
+            .ch4
+            .memory_transfer(src, &mut dst4)
+            .expect("ch4 memory_transfer");
 
         // Wait for channel 0 to complete
         let res0 = {

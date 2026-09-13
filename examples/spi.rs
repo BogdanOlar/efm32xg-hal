@@ -26,8 +26,8 @@ fn main() -> ! {
     let rx = gpio.pc7.into_mode::<InFilt>();
     let clk = gpio.pc8.into_mode::<OutPp>();
 
-    let mut spi = Spi::new(
-        SpiPins::new(p.Usart0, clk, tx, rx),
+    let mut spi = Spi::new_blocking(
+        SpiParts::new(p.Usart0, clk, tx, rx),
         &Config::new(spi::MODE_2, 0),
     );
     let write_orig = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];

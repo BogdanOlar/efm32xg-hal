@@ -3,11 +3,9 @@
 //! Specialize USART peripherals into SPI peripherals
 
 pub mod dma;
-#[cfg(feature = "efemb")]
-pub mod efemb;
 
 use crate::{
-    dma::{DmaChannel, DmaError},
+    dma::DmaError,
     gpio::{
         dynamic::DynamicPin,
         pin::{
@@ -16,7 +14,7 @@ use crate::{
         },
         port::PortId,
     },
-    usart::{spi::dma::SpiDma, UsartId, UsartInstance},
+    usart::{UsartId, UsartInstance},
 };
 use core::cmp::max;
 use efm32xg_pac::usart::vals::{Clkloc, Cshold, Cssetup, Databits, Parity, Rxloc, Stopbits, Txloc};
@@ -31,43 +29,77 @@ use embedded_hal::{
 /// Used when the SPI only needs to receive, in which case it will clock out this byte on MOSI
 pub const TX_FILLER_BYTE: u8 = 0xFF;
 
-/// SPI master which implements `SpiBus` trait
+/// Blocking Spi master
+pub struct SpiBlocking<'d, T: UsartInstance> {
+    low_level: SpiLowLevel<'d, T>,
+}
+
+impl<'d, T: UsartInstance> SpiBlocking<'d, T> {
+    /// New blocking SPI master
+    pub fn new(pins: SpiParts<'d, T>, config: &Config) -> Self {
+        Self {
+            low_level: SpiLowLevel::new(pins, config),
+        }
+    }
+
+    /// Set driver config
+    pub fn set_config(&mut self, config: &Config) {
+        self.low_level.set_config(config);
+    }
+
+    /// Drop self, and release respurces used to construct this driver
+    ///
+    /// # Returns
+    ///
+    /// (Spi HAL peripheral, CLK pin, TX pin, RX pin)
+    pub fn release(self) -> (Peri<'d, T>, DynamicPin, DynamicPin, DynamicPin) {
+        self.low_level.release()
+    }
+
+    fn wait_tx_complete(&self) -> Result<(), SpiError> {
+        // TODO: maybe calculate a counter based on minimum possible baudrate.
+        const MAX_COUNT: u32 = 1_000_000;
+        let mut bail_countdown = MAX_COUNT;
+        let usart_p = self.low_level.peri.regs();
+
+        while !usart_p.status().read().txc() {
+            bail_countdown -= 1;
+
+            if bail_countdown == 0 {
+                return Err(SpiError::TxUnderflow);
+            }
+        }
+        Ok(())
+    }
+}
+
+/// SPI master
 ///
-/// This driver is generic over the USART peripheral singleton type `T` (obtained from
-/// [`crate::efm32_init`]). The singleton is stored as a [`PeripheralRef`] ownership token;
-/// register access goes through `self.peri.regs()`. The pins are stored in their type-erased
-/// [`DynamicPin`] form. All build-time validity (which pins may serve as CLK/TX/RX) is enforced
-/// at compile time by the generic [`SpiPins`] builder, and the SPI operating parameters are
-/// supplied via the non-generic [`Config`]. The only way to obtain an `Spi` is through a valid
-/// `SpiPins` + `Config` passed to [`Spi::new`].
+/// All build-time validity (which pins may serve as CLK/TX/RX) is enforced at compile time by the generic [`SpiPins`]
+/// builder, which WILL degrade any type-state pins to [`DynamicPin`]s.
+///
+/// The SPI operating parameters are supplied via [`Config`].
 #[derive(Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub struct Spi<'d, T: UsartInstance> {
+struct SpiLowLevel<'d, T: UsartInstance> {
     peri: Peri<'d, T>,
     pin_clk: DynamicPin,
     pin_tx: DynamicPin,
     pin_rx: DynamicPin,
 }
 
-impl<'d, T: UsartInstance> Spi<'d, T> {
-    /// Create a new SPI instance from a validated [`SpiPins`] pin/peripheral binding and an
-    /// initial [`Config`].
-    ///
-    /// The USART peripheral and pin routing are taken from `pins`, and the SPI [`Mode`],
-    /// [`BitOrder`], loopback flag, sample delay and baudrate divider are all applied from
-    /// `config` (via [`Spi::set_config`]). The returned [`Spi`] stores the peripheral singleton
-    /// as an ownership token; register access goes through `self.peri.regs()`.
-    pub fn new(pins: SpiPins<'d, T>, config: &Config) -> Self {
-        let mut spi = Spi {
+impl<'d, T: UsartInstance> SpiLowLevel<'d, T> {
+    pub(crate) fn new(pins: SpiParts<'d, T>, config: &Config) -> Self {
+        let usart_p = pins.peri.regs();
+
+        let mut low_level = Self {
             peri: pins.peri,
             pin_clk: pins.pin_clk,
             pin_tx: pins.pin_tx,
             pin_rx: pins.pin_rx,
         };
 
-        let usart_p = spi.peri.regs();
-
-        spi.reset();
+        low_level.reset();
 
         usart_p.ctrl().write(|w| {
             // Set USART to Synchronous Mode
@@ -125,15 +157,18 @@ impl<'d, T: UsartInstance> Spi<'d, T> {
         // Apply the SPI operating configuration (mode, bit order, loopback, sample delay,
         // baudrate divider). This is the same path as `set_config`, so the initial state of the
         // driver matches a subsequent runtime reconfiguration.
-        spi.set_config(config);
+        low_level.set_config(config);
 
-        spi
+        low_level
     }
 
     /// Release the resources used to create this SPI instance
-    /// FIXME: return the usart peripheral too
-    pub fn release(self) -> (DynamicPin, DynamicPin, DynamicPin) {
-        (self.pin_clk, self.pin_tx, self.pin_rx)
+    ///
+    /// # Returns
+    ///
+    /// (Spi HAL peripheral, CLK pin, TX pin, RX pin)
+    fn release(self) -> (Peri<'d, T>, DynamicPin, DynamicPin, DynamicPin) {
+        (self.peri, self.pin_clk, self.pin_tx, self.pin_rx)
     }
 
     /// Set the SPI loopback flag
@@ -219,21 +254,6 @@ impl<'d, T: UsartInstance> Spi<'d, T> {
         self.set_divider(config.divider);
     }
 
-    /// Convert into a Spi implementation which used DMA channels.
-    ///
-    /// # DMA Channel Priority (Errata USART_E203)
-    ///
-    /// The `rx` channel should have a **lower channel number** (higher LDMA
-    /// arbitration priority) than the `tx` channel. This ensures the RX DMA is
-    /// serviced before the TX DMA, preventing RX FIFO overflow that can cause
-    /// received data to be dropped and the transfer to hang indefinitely.
-    ///
-    /// For example, use `into_spi_dma(dma.ch1, dma.ch0)` (TX=ch1, RX=ch0)
-    /// rather than `into_spi_dma(dma.ch0, dma.ch1)`.
-    pub fn into_spi_dma(self, tx: DmaChannel, rx: DmaChannel) -> SpiDma<'d, T> {
-        SpiDma::new(self, tx, rx)
-    }
-
     fn reset(&mut self) {
         let usart_p = self.peri.regs();
 
@@ -273,22 +293,6 @@ impl<'d, T: UsartInstance> Spi<'d, T> {
             UsartId::Usart1 => usart_p.i2sctrl().write_value(Default::default()),
         }
     }
-
-    fn wait_tx_complete(&self) -> Result<(), SpiError> {
-        // TODO: maybe calculate a counter based on minimum possible baudrate.
-        const MAX_COUNT: u32 = 1_000_000;
-        let mut bail_countdown = MAX_COUNT;
-        let usart_p = self.peri.regs();
-
-        while !usart_p.status().read().txc() {
-            bail_countdown -= 1;
-
-            if bail_countdown == 0 {
-                return Err(SpiError::TxUnderflow);
-            }
-        }
-        Ok(())
-    }
 }
 
 /// The USART peripheral and CLK/TX/RX pins an [`Spi`] driver is built from.
@@ -308,7 +312,7 @@ impl<'d, T: UsartInstance> Spi<'d, T> {
 /// order, loopback and sample delay are all configured via the [`Config`] passed to [`Spi::new`].
 #[derive(Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub struct SpiPins<'d, T: UsartInstance> {
+pub struct SpiParts<'d, T: UsartInstance> {
     peri: Peri<'d, T>,
     pin_clk: DynamicPin,
     pin_tx: DynamicPin,
@@ -318,7 +322,7 @@ pub struct SpiPins<'d, T: UsartInstance> {
     rx_loc: u8,
 }
 
-impl<'d, T: UsartInstance> SpiPins<'d, T> {
+impl<'d, T: UsartInstance> SpiParts<'d, T> {
     /// Collect the USART peripheral and its CLK/TX/RX pins for an [`Spi`] driver.
     ///
     /// The USART peripheral is selected by passing its singleton (`[`peripherals::Usart0`]` or
@@ -545,18 +549,18 @@ impl Error for SpiError {
 }
 
 // Implementations for `ErrorType` to be used by `SpiBus` `embedded-hal` trait
-impl<'d, T: UsartInstance> ErrorType for Spi<'d, T> {
+impl<'d, T: UsartInstance> ErrorType for SpiBlocking<'d, T> {
     type Error = SpiError;
 }
 
-impl<'d, T: UsartInstance> SpiBus<u8> for Spi<'d, T> {
+impl<'d, T: UsartInstance> SpiBus<u8> for SpiBlocking<'d, T> {
     fn read(&mut self, words: &mut [u8]) -> Result<(), Self::Error> {
         self.transfer(words, &[])
     }
 
     fn write(&mut self, words: &[u8]) -> Result<(), Self::Error> {
         let mut words_iter = words.iter();
-        let usart_p = self.peri.regs();
+        let usart_p = self.low_level.peri.regs();
 
         // This closure  waits until there are at least 2 (out of 3) bytes available in the TX buffer
         // The first position in the TX Buffer is the Shift Register, which is not accessible through registers
@@ -602,7 +606,7 @@ impl<'d, T: UsartInstance> SpiBus<u8> for Spi<'d, T> {
         let mut tx_iter = write.iter();
         let mut rx_iter = read.iter_mut();
         let mut rx_discard = 0;
-        let usart_p = self.peri.regs();
+        let usart_p = self.low_level.peri.regs();
 
         for (txo, rxo) in (0..max_byte_count).map(|_| (tx_iter.next(), rx_iter.next())) {
             let tx_byte = match txo {
@@ -627,7 +631,7 @@ impl<'d, T: UsartInstance> SpiBus<u8> for Spi<'d, T> {
 
     fn transfer_in_place(&mut self, words: &mut [u8]) -> Result<(), Self::Error> {
         let mut words_iter = words.iter_mut();
-        let usart_p = self.peri.regs();
+        let usart_p = self.low_level.peri.regs();
 
         while let Some(b0) = words_iter.next() {
             if let Some(b1) = words_iter.next() {

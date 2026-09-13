@@ -2,7 +2,7 @@
 #![no_main]
 
 use defmt::error;
-use efm32xg_hal::{crc::Crc, peripherals::Usart0, usart::spi, usart::spi::dma::SpiDma};
+use efm32xg_hal::{crc::Crc, peripherals::Usart0, usart::spi, usart::spi::dma::Spi};
 
 // Provide a defmt timestamp backed by the embassy time driver. The `efemb` feature enables the
 // HAL's LeTimer0 time driver, which `#[init]` starts via `Ticker::init()` before any test runs, so
@@ -23,7 +23,7 @@ mod tests {
         gpio::{Gpio, InFilt, OutPp},
         peripherals::Usart0,
         timer_le::efemb::Ticker,
-        usart::spi::{dma::SpiDma, Config, SpiPins},
+        usart::spi::{dma::Spi, Config, SpiParts},
     };
     use embedded_hal::spi::MODE_2;
 
@@ -82,7 +82,7 @@ mod tests {
     }
 
     #[init]
-    fn init() -> (SpiDma<'static, Usart0>, Crc<u32>) {
+    fn init() -> (Spi<'static, Usart0>, Crc<u32>) {
         // Configure the clocks required by the embassy time driver. LfAClk must be enabled (here the
         // LFRCO at 32.768 kHz, matching the `efemb-timdrv-letim0-hz-32_768` feature) and the HfClk must
         // come from an HF source so that LeTimer0's `Ticker::init()` doesn't fault. See the warning in
@@ -94,16 +94,17 @@ mod tests {
         let crc = CrcDriver::new(p.Gpcrc).into_algo_32(&CRC_32_CKSUM);
         let gpio = Gpio::new(p.Gpio);
         let dma = Dma::init(p.Ldma);
-        let spi = efm32xg_hal::usart::spi::Spi::new(
-            SpiPins::new(
+        let spi = efm32xg_hal::usart::spi::dma::Spi::new(
+            SpiParts::new(
                 p.Usart0,
                 gpio.pc8.into_mode::<OutPp>(),
                 gpio.pc6.into_mode::<OutPp>(),
                 gpio.pc7.into_mode::<InFilt>(),
             ),
             &Config::new(MODE_2, 1).with_loopback(true),
-        )
-        .into_spi_dma(dma.ch1, dma.ch0);
+            dma.ch1,
+            dma.ch0,
+        );
         (spi, crc)
     }
 
@@ -520,7 +521,7 @@ mod tests {
     /// the harness moves on to the next one. Returns `Ok(())` only if all cases passed.
     #[test]
     #[timeout(60)]
-    async fn transfer_async((mut spi, crc): (SpiDma<'static, Usart0>, Crc<u32>)) -> Result<(), ()> {
+    async fn transfer_async((mut spi, crc): (Spi<'static, Usart0>, Crc<u32>)) -> Result<(), ()> {
         let mut failed: usize = 0;
         for (
             i,
@@ -569,7 +570,7 @@ mod tests {
     /// the harness moves on to the next one. Returns `Ok(())` only if all cases passed.
     #[test]
     #[timeout(60)]
-    async fn read_async((mut spi, crc): (SpiDma<'static, Usart0>, Crc<u32>)) -> Result<(), ()> {
+    async fn read_async((mut spi, crc): (Spi<'static, Usart0>, Crc<u32>)) -> Result<(), ()> {
         let mut failed: usize = 0;
         for (
             i,
@@ -615,7 +616,7 @@ mod tests {
     /// the harness moves on to the next one. Returns `Ok(())` only if all cases passed.
     #[test]
     #[timeout(60)]
-    async fn write_async((mut spi, crc): (SpiDma<'static, Usart0>, Crc<u32>)) -> Result<(), ()> {
+    async fn write_async((mut spi, crc): (Spi<'static, Usart0>, Crc<u32>)) -> Result<(), ()> {
         let mut failed: usize = 0;
         for (
             i,
@@ -653,7 +654,7 @@ mod tests {
     }
 }
 
-/// Test [`SpiDma<'static, Usart0>::transfer_async`] transfer
+/// Test [`Spi<'static, Usart0>::transfer_async`] transfer
 ///
 /// Values of `dst_buf`, `dst_len`, `dst_offset` must conform to:
 ///
@@ -665,7 +666,7 @@ async fn test_transfer_async(
     dst_buf: &mut [u8],
     dst_len: usize,
     dst_offset: usize,
-    spi: &mut SpiDma<'static, Usart0>,
+    spi: &mut Spi<'static, Usart0>,
     crc: &Crc<u32>,
 ) -> Result<(), ()> {
     assert_eq!(dst_buf.len(), dst_offset + dst_len + dst_offset);
@@ -679,7 +680,7 @@ async fn test_transfer_async(
     test_buffers(src, dst_buf, dst_len, dst_offset, crc)
 }
 
-/// Test [`SpiDma<'static, Usart0>::transfer_async`] read (RX-only) transfer
+/// Test [`Spi<'static, Usart0>::transfer_async`] read (RX-only) transfer
 ///
 /// Mirrors the synchronous `test_read` helper in `spi_dma.rs`: an RX-only transaction is an SPI
 /// transfer with an empty TX slice. In loopback mode the received bytes are the filler bytes
@@ -689,7 +690,7 @@ async fn test_read_async(
     dst_buf: &mut [u8],
     dst_len: usize,
     dst_offset: usize,
-    spi: &mut SpiDma<'static, Usart0>,
+    spi: &mut Spi<'static, Usart0>,
     crc: &Crc<u32>,
 ) -> Result<(), ()> {
     assert_eq!(dst_buf.len(), dst_offset + dst_len + dst_offset);
@@ -703,7 +704,7 @@ async fn test_read_async(
     test_buffers(src, dst_buf, dst_len, dst_offset, crc)
 }
 
-/// Test [`SpiDma<'static, Usart0>::transfer_async`] write (TX-only) transfer
+/// Test [`Spi<'static, Usart0>::transfer_async`] write (TX-only) transfer
 ///
 /// Mirrors the synchronous `test_write` helper in `spi_dma.rs`: a TX-only transaction is an SPI
 /// transfer with an empty RX slice. `dst_len` is `0` for write tests, so `dst` is empty and only
@@ -713,7 +714,7 @@ async fn test_write_async(
     dst_buf: &mut [u8],
     dst_len: usize,
     dst_offset: usize,
-    spi: &mut SpiDma<'static, Usart0>,
+    spi: &mut Spi<'static, Usart0>,
     crc: &Crc<u32>,
 ) -> Result<(), ()> {
     let ret = spi.transfer_async(&mut [], src).await;

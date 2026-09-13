@@ -17,8 +17,8 @@ mod tests {
         dma::Dma,
         gpio::{Gpio, InFilt, OutPp},
         peripherals::{Usart0, Usart1},
-        usart::spi::dma::SpiDma,
-        usart::spi::{Config, SpiPins},
+        usart::spi::dma::Spi,
+        usart::spi::{Config, SpiParts},
     };
     use embedded_hal::spi::MODE_2;
 
@@ -46,31 +46,33 @@ mod tests {
     };
 
     #[init]
-    fn init() -> (SpiDma<'static, Usart0>, SpiDma<'static, Usart1>, Crc<u32>) {
+    fn init() -> (Spi<'static, Usart0>, Spi<'static, Usart1>, Crc<u32>) {
         let p = efm32xg_hal::init();
         let crc = CrcDriver::new(p.Gpcrc).into_algo_32(&CRC_32_CKSUM);
         let gpio = Gpio::new(p.Gpio);
         let dma = Dma::init(p.Ldma);
-        let spi0 = efm32xg_hal::usart::spi::Spi::new(
-            SpiPins::new(
+        let spi0 = efm32xg_hal::usart::spi::dma::Spi::new(
+            SpiParts::new(
                 p.Usart0,
                 gpio.pc8.into_mode::<OutPp>(),
                 gpio.pc6.into_mode::<OutPp>(),
                 gpio.pc7.into_mode::<InFilt>(),
             ),
             &Config::new(MODE_2, 1).with_loopback(true),
-        )
-        .into_spi_dma(dma.ch1, dma.ch0);
-        let spi1 = efm32xg_hal::usart::spi::Spi::new(
-            SpiPins::new(
+            dma.ch1,
+            dma.ch0,
+        );
+        let spi1 = efm32xg_hal::usart::spi::dma::Spi::new(
+            SpiParts::new(
                 p.Usart1,
                 gpio.pd9.into_mode::<OutPp>(),
                 gpio.pd10.into_mode::<OutPp>(),
                 gpio.pd11.into_mode::<InFilt>(),
             ),
             &Config::new(MODE_2, 1).with_loopback(true),
-        )
-        .into_spi_dma(dma.ch3, dma.ch2);
+            dma.ch3,
+            dma.ch2,
+        );
         (spi0, spi1, crc)
     }
 
@@ -487,7 +489,9 @@ mod tests {
     /// the harness moves on to the next one. Returns `Ok(())` only if all cases passed.
     #[test]
     #[timeout(60)]
-    fn transfer_u8_dma((mut spi, _spi1, crc): (SpiDma<'static, Usart0>, SpiDma<'static, Usart1>, Crc<u32>)) -> Result<(), ()> {
+    fn transfer_u8_dma(
+        (mut spi, _spi1, crc): (Spi<'static, Usart0>, Spi<'static, Usart1>, Crc<u32>),
+    ) -> Result<(), ()> {
         let mut failed: usize = 0;
         for (
             i,
@@ -547,7 +551,9 @@ mod tests {
     /// the harness moves on to the next one. Returns `Ok(())` only if all cases passed.
     #[test]
     #[timeout(60)]
-    fn read_u8_dma((mut spi, _spi1, crc): (SpiDma<'static, Usart0>, SpiDma<'static, Usart1>, Crc<u32>)) -> Result<(), ()> {
+    fn read_u8_dma(
+        (mut spi, _spi1, crc): (Spi<'static, Usart0>, Spi<'static, Usart1>, Crc<u32>),
+    ) -> Result<(), ()> {
         let mut failed: usize = 0;
         for (
             i,
@@ -604,7 +610,9 @@ mod tests {
     /// the harness moves on to the next one. Returns `Ok(())` only if all cases passed.
     #[test]
     #[timeout(60)]
-    fn write_u8_dma((mut spi, _spi1, crc): (SpiDma<'static, Usart0>, SpiDma<'static, Usart1>, Crc<u32>)) -> Result<(), ()> {
+    fn write_u8_dma(
+        (mut spi, _spi1, crc): (Spi<'static, Usart0>, Spi<'static, Usart1>, Crc<u32>),
+    ) -> Result<(), ()> {
         let mut failed: usize = 0;
         for (
             i,
@@ -648,8 +656,8 @@ mod tests {
     /// Interleaved transfers on two independent SPI DMA drivers (USART0 + USART1) to verify
     /// they function in parallel without interference.
     ///
-    /// The first driver (`SpiDma<'static, Usart0>`) uses USART0 with DMA channels 1/0
-    /// (TX/RX). The second (`SpiDma<'static, Usart1>`) uses USART1 with DMA channels 3/2
+    /// The first driver (`Spi<'static, Usart0>`) uses USART0 with DMA channels 1/0
+    /// (TX/RX). The second (`Spi<'static, Usart1>`) uses USART1 with DMA channels 3/2
     /// (TX/RX). The RX channel always has a lower channel number (higher LDMA priority)
     /// than the TX channel, per the errata USART_E203 workaround.
     ///
@@ -659,7 +667,9 @@ mod tests {
     /// correct results after all interleaved transfers.
     #[test]
     #[timeout(60)]
-    fn transfer_interleaved((mut spi0, mut spi1, crc): (SpiDma<'static, Usart0>, SpiDma<'static, Usart1>, Crc<u32>)) -> Result<(), ()> {
+    fn transfer_interleaved(
+        (mut spi0, mut spi1, crc): (Spi<'static, Usart0>, Spi<'static, Usart1>, Crc<u32>),
+    ) -> Result<(), ()> {
         // Use a representative subset of cases that exercise different transfer sizes
         // (small, medium, large, asymmetric).
         const INTERLEAVED_CASES: &[FullDuplexCase] = &[
@@ -710,8 +720,7 @@ mod tests {
         ];
 
         const DST_BUF_OFFSET: usize = 10;
-        const DST_BUF_SIZE: usize =
-            2 * DST_BUF_OFFSET + Descriptor::MAX_TRANSFER_UNITS;
+        const DST_BUF_SIZE: usize = 2 * DST_BUF_OFFSET + Descriptor::MAX_TRANSFER_UNITS;
 
         let mut failed: usize = 0;
 
@@ -737,30 +746,26 @@ mod tests {
                 // test_buffers, which reads dst_buf0 after flush_blocking has consumed
                 // the SpiTransfer and the DMA transfer is complete.
                 let transfer0 = unsafe {
-                    let dst = core::slice::from_raw_parts_mut(
-                        dst_buf0.as_mut_ptr().add(offset),
-                        dst_len,
-                    );
+                    let dst =
+                        core::slice::from_raw_parts_mut(dst_buf0.as_mut_ptr().add(offset), dst_len);
                     spi0.transfer_nb(dst, &src[..src_len])
                 };
 
                 // Start a non-blocking transfer on spi1 (both DMAs now running in parallel).
                 let mut dst_buf1: [u8; DST_BUF_SIZE] = [0; DST_BUF_SIZE];
                 let transfer1 = unsafe {
-                    let dst = core::slice::from_raw_parts_mut(
-                        dst_buf1.as_mut_ptr().add(offset),
-                        dst_len,
-                    );
+                    let dst =
+                        core::slice::from_raw_parts_mut(dst_buf1.as_mut_ptr().add(offset), dst_len);
                     spi1.transfer_nb(dst, &src[..src_len])
                 };
 
                 // Now block on both — they were started in parallel, so the DMA engines
                 // overlap. flush_blocking consumes the SpiTransfer and returns the result.
-                        let res0 = match transfer0 {
-                    Ok(t) => SpiDma::<Usart0>::flush_blocking(t),
+                let res0 = match transfer0 {
+                    Ok(t) => Spi::<Usart0>::flush_blocking(t),
                     Err(e) => Err(e),
                 };
-                        if res0.is_err() {
+                if res0.is_err() {
                     error!(
                         "transfer_interleaved: spi0 case #{} (iter {}/{}) FAILED",
                         i,
@@ -769,7 +774,8 @@ mod tests {
                     );
                     failed += 1;
                 } else {
-                    if test_buffers(src, &dst_buf0[..dst_buf_size], dst_len, offset, &crc).is_err() {
+                    if test_buffers(src, &dst_buf0[..dst_buf_size], dst_len, offset, &crc).is_err()
+                    {
                         error!(
                             "transfer_interleaved: spi0 case #{} (iter {}/{}) buffer check FAILED",
                             i,
@@ -780,11 +786,11 @@ mod tests {
                     }
                 }
 
-                        let res1 = match transfer1 {
-                    Ok(t) => SpiDma::<Usart1>::flush_blocking(t),
+                let res1 = match transfer1 {
+                    Ok(t) => Spi::<Usart1>::flush_blocking(t),
                     Err(e) => Err(e),
                 };
-                        if res1.is_err() {
+                if res1.is_err() {
                     error!(
                         "transfer_interleaved: spi1 case #{} (iter {}/{}) FAILED",
                         i,
@@ -793,7 +799,8 @@ mod tests {
                     );
                     failed += 1;
                 } else {
-                    if test_buffers(src, &dst_buf1[..dst_buf_size], dst_len, offset, &crc).is_err() {
+                    if test_buffers(src, &dst_buf1[..dst_buf_size], dst_len, offset, &crc).is_err()
+                    {
                         error!(
                             "transfer_interleaved: spi1 case #{} (iter {}/{}) buffer check FAILED",
                             i,

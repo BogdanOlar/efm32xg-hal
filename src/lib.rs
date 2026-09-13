@@ -65,7 +65,7 @@ pub mod prelude {
             port::{DataInCtrl, DriveStrength},
             Gpio, GpioError,
         },
-        usart::spi::{BitOrder, Config, Spi, SpiError, SpiPins},
+        usart::spi::{dma::Spi, BitOrder, Config, SpiError, SpiParts},
     };
     pub use efm32xg_pac as pac;
     pub use embedded_hal::{
