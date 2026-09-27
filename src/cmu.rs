@@ -2,13 +2,13 @@
 //!
 
 use crate::gpio::{pin::mode::OutputMode, pin::Pin};
-use cortex_m::asm::nop;
-use efm32xg_pac::{
-    cmu::vals::{Dbg, Hf, Hfclklepresc, HfprescPresc, Lfa, Lfb, Lfe, Selected},
+use crate::pac::{
+    cmu::vals::{Dbg, Hf, Hfclklepresc, HfperprescPresc, HfprescPresc, Lfa, Lfb, Lfe, Selected},
     cryotimer::vals::Oscsel,
     wdog::vals::Clksel,
     CMU, CRYOTIMER, WDOG,
 };
+use cortex_m::asm::nop;
 
 /// Default HF RCO frequency at Reset, in Hz
 const DEFAULT_HF_RCO_FREQUENCY: u32 = 19_000_000;
@@ -107,6 +107,16 @@ impl Cmu {
             .write(|w| w.set_presc(HfprescPresc::from_bits(prescaler as u8)));
 
         self.clocks = Clocks::calculate_hf_clocks(hf_src_clk_freq);
+        self
+    }
+
+    /// Enable High Frequency Peripheral Clock
+    pub fn with_hf_per_clk(self, prescaler: HfPerClockPrescaler) -> Self {
+        CMU.hfperpresc()
+            .write(|w| w.set_presc(HfperprescPresc::from_bits(prescaler.prescaler)));
+
+        CMU.ctrl().modify(|w| w.set_hfperclken(true));
+
         self
     }
 
@@ -496,6 +506,38 @@ pub enum HfClockPrescaler {
     Div32,
 }
 
+/// High Frequency Clock prescaler
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct HfPerClockPrescaler {
+    /// Raw divider value (`0` means divide by `1`)
+    prescaler: u16,
+}
+
+impl HfPerClockPrescaler {
+    /// Minimum prescaler value
+    pub const MIN: Self = Self { prescaler: 0x000 };
+    /// Maximum prescaler value
+    pub const MAX: Self = Self { prescaler: 0x1FF };
+
+    /// New Hf Peripheral Clock prescaler from a clock `divider` value
+    ///
+    /// `0 < divider <= 512`
+    pub const fn try_from_divider(divider: u16) -> Result<Self, CmuError> {
+        match divider {
+            1..=512 => Ok(Self {
+                prescaler: divider - 1,
+            }),
+            _ => Err(CmuError::InvalidHfPerDivider(divider)),
+        }
+    }
+
+    /// Get the clock divider of this prescaler
+    pub fn divider(&self) -> u16 {
+        self.prescaler + 1
+    }
+}
+
 /// TODO:
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -539,9 +581,15 @@ pub enum LfBClockSource {
     UlfRco,
 }
 
-/// TODO:
+/// CMU Error
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CmuError {
+    /// Invalid value for the Hf Peripheral Clock divider
+    InvalidHfPerDivider(u16),
+}
+
 pub trait CmuPin0 {
-    /// TODO:
     fn loc(&self) -> u8;
 }
 
