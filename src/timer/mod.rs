@@ -1,16 +1,17 @@
 //! Timer/Counter
 //!
 
-pub use crate::pac::timer::vals::Presc as TimerDivider;
+pub use crate::pac::{
+    prs::vals::Prssel,
+    timer::vals::{
+        CcCtrlCmoa, CcCtrlIcedge, CcCtrlIcevctrl, CcCtrlMode, CcLoc, Clksel as Source,
+        CtrlMode as Mode, Presc as Prescaler,
+    },
+};
 use crate::{
     cmu::Clocks,
     gpio::pin::Pin,
-    pac::{
-        timer::vals::{
-            Cc0CtrlCmoa, Cc0CtrlIcedge, Cc0CtrlMode, Cc0loc, Cc1loc, Cc2loc, Cc3loc, CtrlMode,
-        },
-        CMU, TIMER0, TIMER1,
-    },
+    pac::{CMU, TIMER0, TIMER1},
     peripherals, Sealed,
 };
 use core::{convert::Infallible, marker::PhantomData};
@@ -65,20 +66,44 @@ pub struct Timer<'d, T: TimerInstance> {
 impl<'d, T: TimerInstance> Timer<'d, T> {
     /// FIXME: take a (timer counter) frequency as parameter and do a best effort to set the timer prescaler and the
     ///        `top` value to get as close as possible
-    pub fn new(peri: Peri<'d, T>, clock_divider: TimerDivider) -> Self {
+    pub fn new(peri: Peri<'d, T>, config: TimerConfig) -> Self {
+        // Enable the timer peripheral clock for this instance.
+        peri.enable_clock();
         let p = peri.regs();
 
+        p.cmd().write(|w| w.set_stop(true));
+        let instance = Self { peri };
+
         p.ctrl().write(|w| {
-            w.set_presc(clock_divider);
-            w.set_mode(CtrlMode::Up);
+            w.set_mode(config.mode);
+            w.set_clksel(config.clock);
+            w.set_presc(config.presc);
         });
+        p.cnt().write(|w| w.set_cnt(config.count));
+        p.top().write(|w| w.set_top(config.top));
+        p.top().write(|w| w.set_top(config.top));
 
-        // Set the resolution of the counter to MAX - 1 because if the timer is going to be split into channels and
-        // any of them is used as PWM, we need to allow the PWM channel to set its compare value to TOP + 1 in order
-        // to achieve 100% duty cycle
-        p.top().write(|w| w.set_top(u16::MAX - 1));
+        for (i, ch_config) in config.channels.configs.iter().enumerate() {
+            let id = ChannelId::from_u8_unchecked(i as u8);
+            let ch = instance.ch(id);
+            ch.ctrl().write(|w| {
+                w.set_mode(ch_config.mode);
+                match ch_config.input_sel {
+                    CcInputSel::Pin(loc) => {
+                        w.set_insel(false);
+                        instance.set_ch_loc(id, loc);
+                    }
+                    CcInputSel::Prs(prssel) => {
+                        w.set_insel(true);
+                        w.set_prssel(prssel);
+                    }
+                }
+                w.set_icedge(ch_config.ic_edge_select);
+                w.set_icevctrl(ch_config.ic_event_control);
+            });
+        }
 
-        Self { peri }
+        instance
     }
 
     /// Split the timer into channels which may be specialised for various uses (delay, pwm, etc.)
@@ -90,9 +115,6 @@ impl<'d, T: TimerInstance> Timer<'d, T> {
         TimerChannel<'d, T, 2>,
         TimerChannel<'d, T, 3>,
     ) {
-        // Enable the timer peripheral clock for this instance.
-        self.peri.enable_clock();
-
         let p = self.peri.regs();
 
         // Enable timer
@@ -118,6 +140,162 @@ impl<'d, T: TimerInstance> Timer<'d, T> {
             },
         )
     }
+
+    fn ch(&self, id: ChannelId) -> crate::pac::timer::Channel {
+        match id {
+            ChannelId::Id0 => self.peri.regs().cc0(),
+            ChannelId::Id1 => self.peri.regs().cc1(),
+            ChannelId::Id2 => self.peri.regs().cc2(),
+            ChannelId::Id3 => self.peri.regs().cc3(),
+        }
+    }
+
+    fn set_ch_loc(&self, id: ChannelId, loc: CcLoc) {
+        self.peri.regs().routeloc0().modify(|w| match id {
+            ChannelId::Id0 => w.set_cc0loc(loc),
+            ChannelId::Id1 => w.set_cc1loc(loc),
+            ChannelId::Id2 => w.set_cc2loc(loc),
+            ChannelId::Id3 => w.set_cc3loc(loc),
+        });
+    }
+}
+
+/// Timer driver config
+#[derive(Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub struct TimerConfig {
+    /// Counting mode for the Timer (`MODE`)
+    pub mode: Mode,
+    /// Clock source for the timer (`CLKSEL`)
+    pub clock: Source,
+    /// Prescaling factor (`PRESC`)
+    pub presc: Prescaler,
+    /// Initial counter value (`CNT`)
+    pub count: u16,
+    /// Top value for the counter (`TOP`)
+    ///
+    /// Default value is `u16::MAX`, since it makes more sense than `0`
+    pub top: u16,
+    /// Capture/Compare configs for channels
+    pub channels: ChannelCofigs,
+}
+
+impl Default for TimerConfig {
+    fn default() -> Self {
+        Self {
+            mode: Mode::Up,
+            clock: Source::Preschfperclk,
+            presc: Prescaler::Div1,
+            count: Default::default(),
+            top: u16::MAX,
+            channels: Default::default(),
+        }
+    }
+}
+
+/// Timer Capture/Compare Channel ID
+#[derive(Debug, Default, Clone, Copy)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+#[repr(u8)]
+pub enum ChannelId {
+    /// Timer Capture/Compare Channel 0
+    #[default]
+    Id0,
+    /// Timer Capture/Compare Channel 1
+    Id1,
+    /// Timer Capture/Compare Channel 2
+    Id2,
+    /// Timer Capture/Compare Channel 3
+    Id3,
+}
+
+impl ChannelId {
+    /// Number of Timer CC channels
+    pub const COUNT: usize = 4;
+
+    pub(crate) const fn from_u8_unchecked(id: u8) -> Self {
+        match id & 0b11 {
+            0 => ChannelId::Id0,
+            1 => ChannelId::Id1,
+            2 => ChannelId::Id2,
+            3 => ChannelId::Id3,
+            _ => unreachable!(),
+        }
+    }
+}
+
+/// Timer Compare/Capture channel config
+#[derive(Debug, Clone, Copy)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub struct CcConfig {
+    /// channel mode
+    pub mode: CcCtrlMode,
+    /// channel input select
+    pub input_sel: CcInputSel,
+    /// Input Capture Edge Select
+    pub ic_edge_select: CcCtrlIcedge,
+    /// Input Capture Event Control
+    pub ic_event_control: CcCtrlIcevctrl,
+}
+
+impl Default for CcConfig {
+    fn default() -> Self {
+        Self {
+            mode: CcCtrlMode::Off,
+            input_sel: Default::default(),
+            ic_edge_select: CcCtrlIcedge::Rising,
+            ic_event_control: CcCtrlIcevctrl::Everyedge,
+        }
+    }
+}
+
+/// Configurations for all Capture/Compare channels of a Timer
+///
+/// Implements [`Default`], and provides a method for initializing the configs for one specific channel.
+///
+/// # Example
+///
+/// Initialize configs with default values except for channel `2`:
+///
+/// ```no_run
+///
+/// ChannelCofigs::default()
+///     .with_cc_config(
+///         ChannelId::Id2,
+///         CcConfig {
+///             mode: CcCtrlMode::Pwm,
+///             ..Default::default()
+///         }
+///     )
+/// ```
+#[derive(Debug, Default, Clone, Copy)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub struct ChannelCofigs {
+    configs: [CcConfig; ChannelId::COUNT],
+}
+
+impl ChannelCofigs {
+    /// Set config for the Capture/Compare channel with the given `id`
+    pub fn with_cc_config(mut self, id: ChannelId, config: CcConfig) -> Self {
+        self.configs[id as usize] = config;
+        self
+    }
+}
+
+/// Timer Capture/Compare channel input selection
+#[derive(Debug, Clone, Copy)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub enum CcInputSel {
+    /// TIMERnCCx pin is selected
+    Pin(CcLoc),
+    /// PRS input (selected by PRSSEL) is selected
+    Prs(Prssel),
+}
+
+impl Default for CcInputSel {
+    fn default() -> Self {
+        Self::Pin(CcLoc::Loc0)
+    }
 }
 
 /// Timer channel
@@ -135,44 +313,44 @@ impl<'d, T: TimerInstance, const CN: u8> TimerChannel<'d, T, CN> {
     {
         let p = self.peri.regs();
 
+        // FIXME: PWM - Set the resolution of the counter to MAX - 1 because if the timer is going to be split into
+        // channels and any of them is used as PWM, we need to allow the PWM channel to set its compare value to TOP + 1
+        // in order to achieve 100% duty cycle
+
         match CN {
             0 => {
-                p.routeloc0()
-                    .write(|w| w.set_cc0loc(Cc0loc::from_bits(pin.loc())));
-                p.cc0_ctrl().write(|w| {
-                    w.set_icedge(Cc0CtrlIcedge::Both);
-                    w.set_cmoa(Cc0CtrlCmoa::Toggle);
-                    w.set_mode(Cc0CtrlMode::Pwm)
+                p.routeloc0().write(|w| w.set_cc0loc(pin.loc()));
+                p.cc0().ctrl().write(|w| {
+                    w.set_icedge(CcCtrlIcedge::Both);
+                    w.set_cmoa(CcCtrlCmoa::Toggle);
+                    w.set_mode(CcCtrlMode::Pwm)
                 });
                 p.routepen().modify(|w| w.set_cc0pen(true));
             }
             1 => {
-                p.routeloc0()
-                    .write(|w| w.set_cc1loc(Cc1loc::from_bits(pin.loc())));
-                p.cc1_ctrl().write(|w| {
-                    w.set_icedge(Cc0CtrlIcedge::Both);
-                    w.set_cmoa(Cc0CtrlCmoa::Toggle);
-                    w.set_mode(Cc0CtrlMode::Pwm)
+                p.routeloc0().write(|w| w.set_cc1loc(pin.loc()));
+                p.cc1().ctrl().write(|w| {
+                    w.set_icedge(CcCtrlIcedge::Both);
+                    w.set_cmoa(CcCtrlCmoa::Toggle);
+                    w.set_mode(CcCtrlMode::Pwm)
                 });
                 p.routepen().modify(|w| w.set_cc1pen(true));
             }
             2 => {
-                p.routeloc0()
-                    .write(|w| w.set_cc2loc(Cc2loc::from_bits(pin.loc())));
-                p.cc2_ctrl().write(|w| {
-                    w.set_icedge(Cc0CtrlIcedge::Both);
-                    w.set_cmoa(Cc0CtrlCmoa::Toggle);
-                    w.set_mode(Cc0CtrlMode::Pwm)
+                p.routeloc0().write(|w| w.set_cc2loc(pin.loc()));
+                p.cc2().ctrl().write(|w| {
+                    w.set_icedge(CcCtrlIcedge::Both);
+                    w.set_cmoa(CcCtrlCmoa::Toggle);
+                    w.set_mode(CcCtrlMode::Pwm)
                 });
                 p.routepen().modify(|w| w.set_cc2pen(true));
             }
             3 => {
-                p.routeloc0()
-                    .write(|w| w.set_cc3loc(Cc3loc::from_bits(pin.loc())));
-                p.cc3_ctrl().write(|w| {
-                    w.set_icedge(Cc0CtrlIcedge::Both);
-                    w.set_cmoa(Cc0CtrlCmoa::Toggle);
-                    w.set_mode(Cc0CtrlMode::Pwm)
+                p.routeloc0().write(|w| w.set_cc3loc(pin.loc()));
+                p.cc3().ctrl().write(|w| {
+                    w.set_icedge(CcCtrlIcedge::Both);
+                    w.set_cmoa(CcCtrlCmoa::Toggle);
+                    w.set_mode(CcCtrlMode::Pwm)
                 });
                 p.routepen().modify(|w| w.set_cc3pen(true));
             }
@@ -193,17 +371,21 @@ impl<'d, T: TimerInstance, const CN: u8> TimerChannel<'d, T, CN> {
 
         match CN {
             0 => p
-                .cc0_ctrl()
-                .write(|w| w.set_mode(Cc0CtrlMode::Outputcompare)),
+                .cc0()
+                .ctrl()
+                .write(|w| w.set_mode(CcCtrlMode::Outputcompare)),
             1 => p
-                .cc1_ctrl()
-                .write(|w| w.set_mode(Cc0CtrlMode::Outputcompare)),
+                .cc1()
+                .ctrl()
+                .write(|w| w.set_mode(CcCtrlMode::Outputcompare)),
             2 => p
-                .cc2_ctrl()
-                .write(|w| w.set_mode(Cc0CtrlMode::Outputcompare)),
+                .cc2()
+                .ctrl()
+                .write(|w| w.set_mode(CcCtrlMode::Outputcompare)),
             3 => p
-                .cc3_ctrl()
-                .write(|w| w.set_mode(Cc0CtrlMode::Outputcompare)),
+                .cc3()
+                .ctrl()
+                .write(|w| w.set_mode(CcCtrlMode::Outputcompare)),
             _ => unreachable!(),
         };
 
@@ -250,7 +432,7 @@ impl<'d, T: TimerInstance, const CN: u8> DelayNs for TimerChannelDelay<'d, T, CN
                         p.ifc().write(|w| w.set_cc0(true));
 
                         // set compare
-                        p.cc0_ccv().write(|w| w.set_ccv(compare as u16));
+                        p.cc0().ccv().write(|w| w.set_ccv(compare as u16));
 
                         // enable channel interrupt
                         p.ien().write(|w| w.set_cc0(true));
@@ -260,7 +442,7 @@ impl<'d, T: TimerInstance, const CN: u8> DelayNs for TimerChannelDelay<'d, T, CN
                         p.ifc().write(|w| w.set_cc1(true));
 
                         // set compare
-                        p.cc1_ccv().write(|w| w.set_ccv(compare as u16));
+                        p.cc1().ccv().write(|w| w.set_ccv(compare as u16));
 
                         // enable channel interrupt
                         p.ien().write(|w| w.set_cc1(true));
@@ -270,7 +452,7 @@ impl<'d, T: TimerInstance, const CN: u8> DelayNs for TimerChannelDelay<'d, T, CN
                         p.ifc().write(|w| w.set_cc2(true));
 
                         // set compare
-                        p.cc2_ccv().write(|w| w.set_ccv(compare as u16));
+                        p.cc2().ccv().write(|w| w.set_ccv(compare as u16));
 
                         // enable channel interrupt
                         p.ien().write(|w| w.set_cc2(true));
@@ -280,7 +462,7 @@ impl<'d, T: TimerInstance, const CN: u8> DelayNs for TimerChannelDelay<'d, T, CN
                         p.ifc().write(|w| w.set_cc3(true));
 
                         // set compare
-                        p.cc3_ccv().write(|w| w.set_ccv(compare as u16));
+                        p.cc3().ccv().write(|w| w.set_ccv(compare as u16));
 
                         // enable channel interrupt
                         p.ien().write(|w| w.set_cc3(true));
@@ -329,10 +511,10 @@ where
         let p = self.peri.regs();
 
         match CN {
-            0 => p.cc0_ccvb().write(|w| w.set_ccvb(duty)),
-            1 => p.cc1_ccvb().write(|w| w.set_ccvb(duty)),
-            2 => p.cc2_ccvb().write(|w| w.set_ccvb(duty)),
-            3 => p.cc3_ccvb().write(|w| w.set_ccvb(duty)),
+            0 => p.cc0().ccvb().write(|w| w.set_ccvb(duty)),
+            1 => p.cc1().ccvb().write(|w| w.set_ccvb(duty)),
+            2 => p.cc2().ccvb().write(|w| w.set_ccvb(duty)),
+            3 => p.cc3().ccvb().write(|w| w.set_ccvb(duty)),
             _ => unreachable!(),
         };
 
@@ -350,150 +532,150 @@ where
 /// Trait to specify the location values for TIMERn_ROUTELOC0 and TIMERn_ROUTELOC1 for pins which can be used as PWM
 pub trait TimerPin<const CN: u8> {
     /// TIMERn_ROUTELOC0 and TIMERn_ROUTELOC1 values for each pin which implements this trait
-    fn loc(&self) -> u8;
+    fn loc(&self) -> CcLoc;
 }
 
 /// Implement pin location trait for each of the timer channels and their sets of 32 pins
 ///
 /// (timer_channel, loc, port, pin)
 macro_rules! impl_timer_channel_loc {
-    ($channel:literal, $loc:literal, $port:literal, $pin:literal) => {
+    ($channel:literal, $loc:expr, $port:literal, $pin:literal) => {
         impl<ANY> TimerPin<$channel> for Pin<$port, $pin, ANY> {
-            fn loc(&self) -> u8 {
+            fn loc(&self) -> CcLoc {
                 $loc
             }
         }
     };
 }
 
-impl_timer_channel_loc!(0, 0, 'A', 0);
-impl_timer_channel_loc!(0, 1, 'A', 1);
-impl_timer_channel_loc!(0, 2, 'A', 2);
-impl_timer_channel_loc!(0, 3, 'A', 3);
-impl_timer_channel_loc!(0, 4, 'A', 4);
-impl_timer_channel_loc!(0, 5, 'A', 5);
-impl_timer_channel_loc!(0, 6, 'B', 11);
-impl_timer_channel_loc!(0, 7, 'B', 12);
-impl_timer_channel_loc!(0, 8, 'B', 13);
-impl_timer_channel_loc!(0, 9, 'B', 14);
-impl_timer_channel_loc!(0, 10, 'B', 15);
-impl_timer_channel_loc!(0, 11, 'C', 6);
-impl_timer_channel_loc!(0, 12, 'C', 7);
-impl_timer_channel_loc!(0, 13, 'C', 8);
-impl_timer_channel_loc!(0, 14, 'C', 9);
-impl_timer_channel_loc!(0, 15, 'C', 10);
-impl_timer_channel_loc!(0, 16, 'C', 11);
-impl_timer_channel_loc!(0, 17, 'D', 9);
-impl_timer_channel_loc!(0, 18, 'D', 10);
-impl_timer_channel_loc!(0, 19, 'D', 11);
-impl_timer_channel_loc!(0, 20, 'D', 12);
-impl_timer_channel_loc!(0, 21, 'D', 13);
-impl_timer_channel_loc!(0, 22, 'D', 14);
-impl_timer_channel_loc!(0, 23, 'D', 15);
-impl_timer_channel_loc!(0, 24, 'F', 0);
-impl_timer_channel_loc!(0, 25, 'F', 1);
-impl_timer_channel_loc!(0, 26, 'F', 2);
-impl_timer_channel_loc!(0, 27, 'F', 3);
-impl_timer_channel_loc!(0, 28, 'F', 4);
-impl_timer_channel_loc!(0, 29, 'F', 5);
-impl_timer_channel_loc!(0, 30, 'F', 6);
-impl_timer_channel_loc!(0, 31, 'F', 7);
+impl_timer_channel_loc!(0, CcLoc::Loc0, 'A', 0);
+impl_timer_channel_loc!(0, CcLoc::Loc1, 'A', 1);
+impl_timer_channel_loc!(0, CcLoc::Loc2, 'A', 2);
+impl_timer_channel_loc!(0, CcLoc::Loc3, 'A', 3);
+impl_timer_channel_loc!(0, CcLoc::Loc4, 'A', 4);
+impl_timer_channel_loc!(0, CcLoc::Loc5, 'A', 5);
+impl_timer_channel_loc!(0, CcLoc::Loc6, 'B', 11);
+impl_timer_channel_loc!(0, CcLoc::Loc7, 'B', 12);
+impl_timer_channel_loc!(0, CcLoc::Loc8, 'B', 13);
+impl_timer_channel_loc!(0, CcLoc::Loc9, 'B', 14);
+impl_timer_channel_loc!(0, CcLoc::Loc10, 'B', 15);
+impl_timer_channel_loc!(0, CcLoc::Loc11, 'C', 6);
+impl_timer_channel_loc!(0, CcLoc::Loc12, 'C', 7);
+impl_timer_channel_loc!(0, CcLoc::Loc13, 'C', 8);
+impl_timer_channel_loc!(0, CcLoc::Loc14, 'C', 9);
+impl_timer_channel_loc!(0, CcLoc::Loc15, 'C', 10);
+impl_timer_channel_loc!(0, CcLoc::Loc16, 'C', 11);
+impl_timer_channel_loc!(0, CcLoc::Loc17, 'D', 9);
+impl_timer_channel_loc!(0, CcLoc::Loc18, 'D', 10);
+impl_timer_channel_loc!(0, CcLoc::Loc19, 'D', 11);
+impl_timer_channel_loc!(0, CcLoc::Loc20, 'D', 12);
+impl_timer_channel_loc!(0, CcLoc::Loc21, 'D', 13);
+impl_timer_channel_loc!(0, CcLoc::Loc22, 'D', 14);
+impl_timer_channel_loc!(0, CcLoc::Loc23, 'D', 15);
+impl_timer_channel_loc!(0, CcLoc::Loc24, 'F', 0);
+impl_timer_channel_loc!(0, CcLoc::Loc25, 'F', 1);
+impl_timer_channel_loc!(0, CcLoc::Loc26, 'F', 2);
+impl_timer_channel_loc!(0, CcLoc::Loc27, 'F', 3);
+impl_timer_channel_loc!(0, CcLoc::Loc28, 'F', 4);
+impl_timer_channel_loc!(0, CcLoc::Loc29, 'F', 5);
+impl_timer_channel_loc!(0, CcLoc::Loc30, 'F', 6);
+impl_timer_channel_loc!(0, CcLoc::Loc31, 'F', 7);
 
-impl_timer_channel_loc!(1, 0, 'A', 1);
-impl_timer_channel_loc!(1, 1, 'A', 2);
-impl_timer_channel_loc!(1, 2, 'A', 3);
-impl_timer_channel_loc!(1, 3, 'A', 4);
-impl_timer_channel_loc!(1, 4, 'A', 5);
-impl_timer_channel_loc!(1, 5, 'B', 11);
-impl_timer_channel_loc!(1, 6, 'B', 12);
-impl_timer_channel_loc!(1, 7, 'B', 13);
-impl_timer_channel_loc!(1, 8, 'B', 14);
-impl_timer_channel_loc!(1, 9, 'B', 15);
-impl_timer_channel_loc!(1, 10, 'C', 6);
-impl_timer_channel_loc!(1, 11, 'C', 7);
-impl_timer_channel_loc!(1, 12, 'C', 8);
-impl_timer_channel_loc!(1, 13, 'C', 9);
-impl_timer_channel_loc!(1, 14, 'C', 10);
-impl_timer_channel_loc!(1, 15, 'C', 11);
-impl_timer_channel_loc!(1, 16, 'D', 9);
-impl_timer_channel_loc!(1, 17, 'D', 10);
-impl_timer_channel_loc!(1, 18, 'D', 11);
-impl_timer_channel_loc!(1, 19, 'D', 12);
-impl_timer_channel_loc!(1, 20, 'D', 13);
-impl_timer_channel_loc!(1, 21, 'D', 14);
-impl_timer_channel_loc!(1, 22, 'D', 15);
-impl_timer_channel_loc!(1, 23, 'F', 0);
-impl_timer_channel_loc!(1, 24, 'F', 1);
-impl_timer_channel_loc!(1, 25, 'F', 2);
-impl_timer_channel_loc!(1, 26, 'F', 3);
-impl_timer_channel_loc!(1, 27, 'F', 4);
-impl_timer_channel_loc!(1, 28, 'F', 5);
-impl_timer_channel_loc!(1, 29, 'F', 6);
-impl_timer_channel_loc!(1, 30, 'F', 7);
-impl_timer_channel_loc!(1, 31, 'A', 0);
+impl_timer_channel_loc!(1, CcLoc::Loc0, 'A', 1);
+impl_timer_channel_loc!(1, CcLoc::Loc1, 'A', 2);
+impl_timer_channel_loc!(1, CcLoc::Loc2, 'A', 3);
+impl_timer_channel_loc!(1, CcLoc::Loc3, 'A', 4);
+impl_timer_channel_loc!(1, CcLoc::Loc4, 'A', 5);
+impl_timer_channel_loc!(1, CcLoc::Loc5, 'B', 11);
+impl_timer_channel_loc!(1, CcLoc::Loc6, 'B', 12);
+impl_timer_channel_loc!(1, CcLoc::Loc7, 'B', 13);
+impl_timer_channel_loc!(1, CcLoc::Loc8, 'B', 14);
+impl_timer_channel_loc!(1, CcLoc::Loc9, 'B', 15);
+impl_timer_channel_loc!(1, CcLoc::Loc10, 'C', 6);
+impl_timer_channel_loc!(1, CcLoc::Loc11, 'C', 7);
+impl_timer_channel_loc!(1, CcLoc::Loc12, 'C', 8);
+impl_timer_channel_loc!(1, CcLoc::Loc13, 'C', 9);
+impl_timer_channel_loc!(1, CcLoc::Loc14, 'C', 10);
+impl_timer_channel_loc!(1, CcLoc::Loc15, 'C', 11);
+impl_timer_channel_loc!(1, CcLoc::Loc16, 'D', 9);
+impl_timer_channel_loc!(1, CcLoc::Loc17, 'D', 10);
+impl_timer_channel_loc!(1, CcLoc::Loc18, 'D', 11);
+impl_timer_channel_loc!(1, CcLoc::Loc19, 'D', 12);
+impl_timer_channel_loc!(1, CcLoc::Loc20, 'D', 13);
+impl_timer_channel_loc!(1, CcLoc::Loc21, 'D', 14);
+impl_timer_channel_loc!(1, CcLoc::Loc22, 'D', 15);
+impl_timer_channel_loc!(1, CcLoc::Loc23, 'F', 0);
+impl_timer_channel_loc!(1, CcLoc::Loc24, 'F', 1);
+impl_timer_channel_loc!(1, CcLoc::Loc25, 'F', 2);
+impl_timer_channel_loc!(1, CcLoc::Loc26, 'F', 3);
+impl_timer_channel_loc!(1, CcLoc::Loc27, 'F', 4);
+impl_timer_channel_loc!(1, CcLoc::Loc28, 'F', 5);
+impl_timer_channel_loc!(1, CcLoc::Loc29, 'F', 6);
+impl_timer_channel_loc!(1, CcLoc::Loc30, 'F', 7);
+impl_timer_channel_loc!(1, CcLoc::Loc31, 'A', 0);
 
-impl_timer_channel_loc!(2, 0, 'A', 2);
-impl_timer_channel_loc!(2, 1, 'A', 3);
-impl_timer_channel_loc!(2, 2, 'A', 4);
-impl_timer_channel_loc!(2, 3, 'A', 5);
-impl_timer_channel_loc!(2, 4, 'B', 11);
-impl_timer_channel_loc!(2, 5, 'B', 12);
-impl_timer_channel_loc!(2, 6, 'B', 13);
-impl_timer_channel_loc!(2, 7, 'B', 14);
-impl_timer_channel_loc!(2, 8, 'B', 15);
-impl_timer_channel_loc!(2, 9, 'C', 6);
-impl_timer_channel_loc!(2, 10, 'C', 7);
-impl_timer_channel_loc!(2, 11, 'C', 8);
-impl_timer_channel_loc!(2, 12, 'C', 9);
-impl_timer_channel_loc!(2, 13, 'C', 10);
-impl_timer_channel_loc!(2, 14, 'C', 11);
-impl_timer_channel_loc!(2, 15, 'D', 9);
-impl_timer_channel_loc!(2, 16, 'D', 10);
-impl_timer_channel_loc!(2, 17, 'D', 11);
-impl_timer_channel_loc!(2, 18, 'D', 12);
-impl_timer_channel_loc!(2, 19, 'D', 13);
-impl_timer_channel_loc!(2, 20, 'D', 14);
-impl_timer_channel_loc!(2, 21, 'D', 15);
-impl_timer_channel_loc!(2, 22, 'F', 0);
-impl_timer_channel_loc!(2, 23, 'F', 1);
-impl_timer_channel_loc!(2, 24, 'F', 2);
-impl_timer_channel_loc!(2, 25, 'F', 3);
-impl_timer_channel_loc!(2, 26, 'F', 4);
-impl_timer_channel_loc!(2, 27, 'F', 5);
-impl_timer_channel_loc!(2, 28, 'F', 6);
-impl_timer_channel_loc!(2, 29, 'F', 7);
-impl_timer_channel_loc!(2, 30, 'A', 0);
-impl_timer_channel_loc!(2, 31, 'A', 1);
+impl_timer_channel_loc!(2, CcLoc::Loc0, 'A', 2);
+impl_timer_channel_loc!(2, CcLoc::Loc1, 'A', 3);
+impl_timer_channel_loc!(2, CcLoc::Loc2, 'A', 4);
+impl_timer_channel_loc!(2, CcLoc::Loc3, 'A', 5);
+impl_timer_channel_loc!(2, CcLoc::Loc4, 'B', 11);
+impl_timer_channel_loc!(2, CcLoc::Loc5, 'B', 12);
+impl_timer_channel_loc!(2, CcLoc::Loc6, 'B', 13);
+impl_timer_channel_loc!(2, CcLoc::Loc7, 'B', 14);
+impl_timer_channel_loc!(2, CcLoc::Loc8, 'B', 15);
+impl_timer_channel_loc!(2, CcLoc::Loc9, 'C', 6);
+impl_timer_channel_loc!(2, CcLoc::Loc10, 'C', 7);
+impl_timer_channel_loc!(2, CcLoc::Loc11, 'C', 8);
+impl_timer_channel_loc!(2, CcLoc::Loc12, 'C', 9);
+impl_timer_channel_loc!(2, CcLoc::Loc13, 'C', 10);
+impl_timer_channel_loc!(2, CcLoc::Loc14, 'C', 11);
+impl_timer_channel_loc!(2, CcLoc::Loc15, 'D', 9);
+impl_timer_channel_loc!(2, CcLoc::Loc16, 'D', 10);
+impl_timer_channel_loc!(2, CcLoc::Loc17, 'D', 11);
+impl_timer_channel_loc!(2, CcLoc::Loc18, 'D', 12);
+impl_timer_channel_loc!(2, CcLoc::Loc19, 'D', 13);
+impl_timer_channel_loc!(2, CcLoc::Loc20, 'D', 14);
+impl_timer_channel_loc!(2, CcLoc::Loc21, 'D', 15);
+impl_timer_channel_loc!(2, CcLoc::Loc22, 'F', 0);
+impl_timer_channel_loc!(2, CcLoc::Loc23, 'F', 1);
+impl_timer_channel_loc!(2, CcLoc::Loc24, 'F', 2);
+impl_timer_channel_loc!(2, CcLoc::Loc25, 'F', 3);
+impl_timer_channel_loc!(2, CcLoc::Loc26, 'F', 4);
+impl_timer_channel_loc!(2, CcLoc::Loc27, 'F', 5);
+impl_timer_channel_loc!(2, CcLoc::Loc28, 'F', 6);
+impl_timer_channel_loc!(2, CcLoc::Loc29, 'F', 7);
+impl_timer_channel_loc!(2, CcLoc::Loc30, 'A', 0);
+impl_timer_channel_loc!(2, CcLoc::Loc31, 'A', 1);
 
-impl_timer_channel_loc!(3, 0, 'A', 3);
-impl_timer_channel_loc!(3, 1, 'A', 4);
-impl_timer_channel_loc!(3, 2, 'A', 5);
-impl_timer_channel_loc!(3, 3, 'B', 11);
-impl_timer_channel_loc!(3, 4, 'B', 12);
-impl_timer_channel_loc!(3, 5, 'B', 13);
-impl_timer_channel_loc!(3, 6, 'B', 14);
-impl_timer_channel_loc!(3, 7, 'B', 15);
-impl_timer_channel_loc!(3, 8, 'C', 6);
-impl_timer_channel_loc!(3, 9, 'C', 7);
-impl_timer_channel_loc!(3, 10, 'C', 8);
-impl_timer_channel_loc!(3, 11, 'C', 9);
-impl_timer_channel_loc!(3, 12, 'C', 10);
-impl_timer_channel_loc!(3, 13, 'C', 11);
-impl_timer_channel_loc!(3, 14, 'D', 9);
-impl_timer_channel_loc!(3, 15, 'D', 10);
-impl_timer_channel_loc!(3, 16, 'D', 11);
-impl_timer_channel_loc!(3, 17, 'D', 12);
-impl_timer_channel_loc!(3, 18, 'D', 13);
-impl_timer_channel_loc!(3, 19, 'D', 14);
-impl_timer_channel_loc!(3, 20, 'D', 15);
-impl_timer_channel_loc!(3, 21, 'F', 0);
-impl_timer_channel_loc!(3, 22, 'F', 1);
-impl_timer_channel_loc!(3, 23, 'F', 2);
-impl_timer_channel_loc!(3, 24, 'F', 3);
-impl_timer_channel_loc!(3, 25, 'F', 4);
-impl_timer_channel_loc!(3, 26, 'F', 5);
-impl_timer_channel_loc!(3, 27, 'F', 6);
-impl_timer_channel_loc!(3, 28, 'F', 7);
-impl_timer_channel_loc!(3, 29, 'A', 0);
-impl_timer_channel_loc!(3, 30, 'A', 1);
-impl_timer_channel_loc!(3, 31, 'A', 2);
+impl_timer_channel_loc!(3, CcLoc::Loc0, 'A', 3);
+impl_timer_channel_loc!(3, CcLoc::Loc1, 'A', 4);
+impl_timer_channel_loc!(3, CcLoc::Loc2, 'A', 5);
+impl_timer_channel_loc!(3, CcLoc::Loc3, 'B', 11);
+impl_timer_channel_loc!(3, CcLoc::Loc4, 'B', 12);
+impl_timer_channel_loc!(3, CcLoc::Loc5, 'B', 13);
+impl_timer_channel_loc!(3, CcLoc::Loc6, 'B', 14);
+impl_timer_channel_loc!(3, CcLoc::Loc7, 'B', 15);
+impl_timer_channel_loc!(3, CcLoc::Loc8, 'C', 6);
+impl_timer_channel_loc!(3, CcLoc::Loc9, 'C', 7);
+impl_timer_channel_loc!(3, CcLoc::Loc10, 'C', 8);
+impl_timer_channel_loc!(3, CcLoc::Loc11, 'C', 9);
+impl_timer_channel_loc!(3, CcLoc::Loc12, 'C', 10);
+impl_timer_channel_loc!(3, CcLoc::Loc13, 'C', 11);
+impl_timer_channel_loc!(3, CcLoc::Loc14, 'D', 9);
+impl_timer_channel_loc!(3, CcLoc::Loc15, 'D', 10);
+impl_timer_channel_loc!(3, CcLoc::Loc16, 'D', 11);
+impl_timer_channel_loc!(3, CcLoc::Loc17, 'D', 12);
+impl_timer_channel_loc!(3, CcLoc::Loc18, 'D', 13);
+impl_timer_channel_loc!(3, CcLoc::Loc19, 'D', 14);
+impl_timer_channel_loc!(3, CcLoc::Loc20, 'D', 15);
+impl_timer_channel_loc!(3, CcLoc::Loc21, 'F', 0);
+impl_timer_channel_loc!(3, CcLoc::Loc22, 'F', 1);
+impl_timer_channel_loc!(3, CcLoc::Loc23, 'F', 2);
+impl_timer_channel_loc!(3, CcLoc::Loc24, 'F', 3);
+impl_timer_channel_loc!(3, CcLoc::Loc25, 'F', 4);
+impl_timer_channel_loc!(3, CcLoc::Loc26, 'F', 5);
+impl_timer_channel_loc!(3, CcLoc::Loc27, 'F', 6);
+impl_timer_channel_loc!(3, CcLoc::Loc28, 'F', 7);
+impl_timer_channel_loc!(3, CcLoc::Loc29, 'A', 0);
+impl_timer_channel_loc!(3, CcLoc::Loc30, 'A', 1);
+impl_timer_channel_loc!(3, CcLoc::Loc31, 'A', 2);
