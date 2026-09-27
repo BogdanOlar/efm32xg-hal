@@ -30,27 +30,27 @@ use embedded_hal::{
 /// any second use fails to compile.
 pub trait TimerInstance: Sealed + embassy_hal_internal::PeripheralType + 'static {
     /// Returns the chiptool PAC register-block handle for this timer instance.
-    fn regs() -> crate::pac::timer::Timer;
+    fn regs(&self) -> crate::pac::timer::Timer;
     /// Enables the HF peripheral clock for this timer instance.
-    fn enable_clock();
+    fn enable_clock(&self);
 }
 
 impl Sealed for peripherals::Timer0 {}
 impl TimerInstance for peripherals::Timer0 {
-    fn regs() -> crate::pac::timer::Timer {
+    fn regs(&self) -> crate::pac::timer::Timer {
         TIMER0
     }
-    fn enable_clock() {
+    fn enable_clock(&self) {
         CMU.hfperclken0().modify(|w| w.set_timer0(true));
     }
 }
 
 impl Sealed for peripherals::Timer1 {}
 impl TimerInstance for peripherals::Timer1 {
-    fn regs() -> crate::pac::timer::Timer {
+    fn regs(&self) -> crate::pac::timer::Timer {
         TIMER1
     }
-    fn enable_clock() {
+    fn enable_clock(&self) {
         CMU.hfperclken0().modify(|w| w.set_timer1(true));
     }
 }
@@ -66,9 +66,9 @@ impl<'d, T: TimerInstance> Timer<'d, T> {
     /// FIXME: take a (timer counter) frequency as parameter and do a best effort to set the timer prescaler and the
     ///        `top` value to get as close as possible
     pub fn new(peri: Peri<'d, T>, clock_divider: TimerDivider) -> Self {
-        let timer = T::regs();
+        let p = peri.regs();
 
-        timer.ctrl().write(|w| {
+        p.ctrl().write(|w| {
             w.set_presc(clock_divider);
             w.set_mode(CtrlMode::Up);
         });
@@ -76,11 +76,9 @@ impl<'d, T: TimerInstance> Timer<'d, T> {
         // Set the resolution of the counter to MAX - 1 because if the timer is going to be split into channels and
         // any of them is used as PWM, we need to allow the PWM channel to set its compare value to TOP + 1 in order
         // to achieve 100% duty cycle
-        timer.top().write(|w| w.set_top(u16::MAX - 1));
+        p.top().write(|w| w.set_top(u16::MAX - 1));
 
-        Self {
-            peri: peri,
-        }
+        Self { peri }
     }
 
     /// Split the timer into channels which may be specialised for various uses (delay, pwm, etc.)
@@ -93,10 +91,12 @@ impl<'d, T: TimerInstance> Timer<'d, T> {
         TimerChannel<'d, T, 3>,
     ) {
         // Enable the timer peripheral clock for this instance.
-        T::enable_clock();
+        self.peri.enable_clock();
+
+        let p = self.peri.regs();
 
         // Enable timer
-        T::regs().cmd().write(|w| w.set_start(true));
+        p.cmd().write(|w| w.set_start(true));
 
         // Split the peripheral into its channels. Each channel drives a distinct
         // capture/compare channel, and the `Timer` is consumed, so the original singleton
@@ -133,52 +133,48 @@ impl<'d, T: TimerInstance, const CN: u8> TimerChannel<'d, T, CN> {
     where
         PIN: OutputPin + TimerPin<CN>,
     {
-        let timer = T::regs();
+        let p = self.peri.regs();
 
         match CN {
             0 => {
-                timer
-                    .routeloc0()
+                p.routeloc0()
                     .write(|w| w.set_cc0loc(Cc0loc::from_bits(pin.loc())));
-                timer.cc0_ctrl().write(|w| {
+                p.cc0_ctrl().write(|w| {
                     w.set_icedge(Cc0CtrlIcedge::Both);
                     w.set_cmoa(Cc0CtrlCmoa::Toggle);
                     w.set_mode(Cc0CtrlMode::Pwm)
                 });
-                timer.routepen().modify(|w| w.set_cc0pen(true));
+                p.routepen().modify(|w| w.set_cc0pen(true));
             }
             1 => {
-                timer
-                    .routeloc0()
+                p.routeloc0()
                     .write(|w| w.set_cc1loc(Cc1loc::from_bits(pin.loc())));
-                timer.cc1_ctrl().write(|w| {
+                p.cc1_ctrl().write(|w| {
                     w.set_icedge(Cc0CtrlIcedge::Both);
                     w.set_cmoa(Cc0CtrlCmoa::Toggle);
                     w.set_mode(Cc0CtrlMode::Pwm)
                 });
-                timer.routepen().modify(|w| w.set_cc1pen(true));
+                p.routepen().modify(|w| w.set_cc1pen(true));
             }
             2 => {
-                timer
-                    .routeloc0()
+                p.routeloc0()
                     .write(|w| w.set_cc2loc(Cc2loc::from_bits(pin.loc())));
-                timer.cc2_ctrl().write(|w| {
+                p.cc2_ctrl().write(|w| {
                     w.set_icedge(Cc0CtrlIcedge::Both);
                     w.set_cmoa(Cc0CtrlCmoa::Toggle);
                     w.set_mode(Cc0CtrlMode::Pwm)
                 });
-                timer.routepen().modify(|w| w.set_cc2pen(true));
+                p.routepen().modify(|w| w.set_cc2pen(true));
             }
             3 => {
-                timer
-                    .routeloc0()
+                p.routeloc0()
                     .write(|w| w.set_cc3loc(Cc3loc::from_bits(pin.loc())));
-                timer.cc3_ctrl().write(|w| {
+                p.cc3_ctrl().write(|w| {
                     w.set_icedge(Cc0CtrlIcedge::Both);
                     w.set_cmoa(Cc0CtrlCmoa::Toggle);
                     w.set_mode(Cc0CtrlMode::Pwm)
                 });
-                timer.routepen().modify(|w| w.set_cc3pen(true));
+                p.routepen().modify(|w| w.set_cc3pen(true));
             }
             _ => unreachable!(),
         }
@@ -191,21 +187,21 @@ impl<'d, T: TimerInstance, const CN: u8> TimerChannel<'d, T, CN> {
 
     /// Convert timer to a Delay
     pub fn into_delay(self, clocks: &Clocks) -> TimerChannelDelay<'d, T, CN> {
-        let timer = T::regs();
-        let timer_div: u8 = timer.ctrl().read().presc().to_bits();
+        let p = self.peri.regs();
+        let timer_div: u8 = p.ctrl().read().presc().to_bits();
         let timer_freq = clocks.hf_per_clk() / (timer_div + 1) as u32;
 
         match CN {
-            0 => timer
+            0 => p
                 .cc0_ctrl()
                 .write(|w| w.set_mode(Cc0CtrlMode::Outputcompare)),
-            1 => timer
+            1 => p
                 .cc1_ctrl()
                 .write(|w| w.set_mode(Cc0CtrlMode::Outputcompare)),
-            2 => timer
+            2 => p
                 .cc2_ctrl()
                 .write(|w| w.set_mode(Cc0CtrlMode::Outputcompare)),
-            3 => timer
+            3 => p
                 .cc3_ctrl()
                 .write(|w| w.set_mode(Cc0CtrlMode::Outputcompare)),
             _ => unreachable!(),
@@ -238,10 +234,10 @@ impl<'d, T: TimerInstance, const CN: u8> DelayNs for TimerChannelDelay<'d, T, CN
         //        A better accuracy may be obtained if we implement `DelayNs` for `Timer` instead of `TimerChannelDelay`
         //        since we can control when the timer starts.
         if microsecs > 0 {
-            let timer = T::regs();
+            let p = self.peri.regs();
             let ticks_left = self.timer_freq as u64 * microsecs as u64 / 1_000_000_u64;
-            let reload_max = timer.top().read().top() as u32;
-            let reference_count = timer.cnt().read().cnt() as u32;
+            let reload_max = p.top().read().top() as u32;
+            let reference_count = p.cnt().read().cnt() as u32;
 
             let mut ticks_left = ticks_left as u32;
             let mut reload = ticks_left.min(reload_max);
@@ -251,43 +247,43 @@ impl<'d, T: TimerInstance, const CN: u8> DelayNs for TimerChannelDelay<'d, T, CN
                 match CN {
                     0 => {
                         // clear interrupt flag
-                        timer.ifc().write(|w| w.set_cc0(true));
+                        p.ifc().write(|w| w.set_cc0(true));
 
                         // set compare
-                        timer.cc0_ccv().write(|w| w.set_ccv(compare as u16));
+                        p.cc0_ccv().write(|w| w.set_ccv(compare as u16));
 
                         // enable channel interrupt
-                        timer.ien().write(|w| w.set_cc0(true));
+                        p.ien().write(|w| w.set_cc0(true));
                     }
                     1 => {
                         // clear interrupt flag
-                        timer.ifc().write(|w| w.set_cc1(true));
+                        p.ifc().write(|w| w.set_cc1(true));
 
                         // set compare
-                        timer.cc1_ccv().write(|w| w.set_ccv(compare as u16));
+                        p.cc1_ccv().write(|w| w.set_ccv(compare as u16));
 
                         // enable channel interrupt
-                        timer.ien().write(|w| w.set_cc1(true));
+                        p.ien().write(|w| w.set_cc1(true));
                     }
                     2 => {
                         // clear interrupt flag
-                        timer.ifc().write(|w| w.set_cc2(true));
+                        p.ifc().write(|w| w.set_cc2(true));
 
                         // set compare
-                        timer.cc2_ccv().write(|w| w.set_ccv(compare as u16));
+                        p.cc2_ccv().write(|w| w.set_ccv(compare as u16));
 
                         // enable channel interrupt
-                        timer.ien().write(|w| w.set_cc2(true));
+                        p.ien().write(|w| w.set_cc2(true));
                     }
                     3 => {
                         // clear interrupt flag
-                        timer.ifc().write(|w| w.set_cc3(true));
+                        p.ifc().write(|w| w.set_cc3(true));
 
                         // set compare
-                        timer.cc3_ccv().write(|w| w.set_ccv(compare as u16));
+                        p.cc3_ccv().write(|w| w.set_ccv(compare as u16));
 
                         // enable channel interrupt
-                        timer.ien().write(|w| w.set_cc3(true));
+                        p.ien().write(|w| w.set_cc3(true));
                     }
                     _ => unreachable!(),
                 }
@@ -298,10 +294,10 @@ impl<'d, T: TimerInstance, const CN: u8> DelayNs for TimerChannelDelay<'d, T, CN
                 compare = (reference_count + reload) % reload_max;
 
                 match CN {
-                    0 => while !timer.if_().read().cc0() {},
-                    1 => while !timer.if_().read().cc1() {},
-                    2 => while !timer.if_().read().cc2() {},
-                    3 => while !timer.if_().read().cc3() {},
+                    0 => while !p.if_().read().cc0() {},
+                    1 => while !p.if_().read().cc1() {},
+                    2 => while !p.if_().read().cc2() {},
+                    3 => while !p.if_().read().cc3() {},
                     _ => unreachable!(),
                 }
             }
@@ -326,17 +322,17 @@ where
 {
     fn max_duty_cycle(&self) -> u16 {
         // A 100% duty cycle is obtained by setting the channel Capture/Compare value to `top + 1`
-        T::regs().top().read().top().saturating_add(1)
+        self.peri.regs().top().read().top().saturating_add(1)
     }
 
     fn set_duty_cycle(&mut self, duty: u16) -> Result<(), Self::Error> {
-        let timer = T::regs();
+        let p = self.peri.regs();
 
         match CN {
-            0 => timer.cc0_ccvb().write(|w| w.set_ccvb(duty)),
-            1 => timer.cc1_ccvb().write(|w| w.set_ccvb(duty)),
-            2 => timer.cc2_ccvb().write(|w| w.set_ccvb(duty)),
-            3 => timer.cc3_ccvb().write(|w| w.set_ccvb(duty)),
+            0 => p.cc0_ccvb().write(|w| w.set_ccvb(duty)),
+            1 => p.cc1_ccvb().write(|w| w.set_ccvb(duty)),
+            2 => p.cc2_ccvb().write(|w| w.set_ccvb(duty)),
+            3 => p.cc3_ccvb().write(|w| w.set_ccvb(duty)),
             _ => unreachable!(),
         };
 
