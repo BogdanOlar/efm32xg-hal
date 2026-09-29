@@ -146,6 +146,7 @@ impl<'d, T: UsartInstance> Spi<'d, T> {
     /// Do an async SPI transaction.
     ///
     /// `write` is written to the slave on MOSI and words received on MISO are stored in `read`.
+    #[cfg(feature = "efemb")]
     pub async fn transfer_async<Word: Copy + 'static>(
         &mut self,
         read: &mut [Word],
