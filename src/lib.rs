@@ -42,12 +42,9 @@ embassy_hal_internal::peripherals!(
 
 pub use embassy_hal_internal::{Peri, PeripheralType};
 
-/// Initialize the HAL and return the peripheral singletons.
+/// Initialize the HAL and return the (HAL) peripheral singletons.
 ///
-/// This may be called only once; a second call panics. Move the relevant fields out of the
-/// returned [`Peripherals`] struct and pass them to driver constructors, e.g.
-/// `Timer::new(p.Timer0, TimerDivider::Div1024)`. Because each peripheral is a distinct type
-/// and the field is moved, two drivers cannot be created for the same instance.
+/// This may be called only once; a second call panics.
 pub fn init() -> Peripherals {
     Peripherals::take()
 }

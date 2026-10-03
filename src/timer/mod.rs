@@ -1,18 +1,18 @@
 //! Timer/Counter
 //!
 
-pub use crate::pac::{
-    prs::vals::Prssel,
-    timer::vals::{
-        CcCtrlCmoa, CcCtrlIcedge, CcCtrlIcevctrl, CcCtrlMode, CcLoc, Clksel as Source,
-        CtrlMode as Mode, Presc as Prescaler,
-    },
+pub mod irq;
+
+pub use crate::pac::timer::vals::{
+    CcCtrlCmoa, CcCtrlIcedge, CcCtrlIcevctrl, CcCtrlMode, CcCtrlPrssel, CcLoc, Clksel, CtrlMode,
+    Presc,
 };
 use crate::{
     cmu::Clocks,
     gpio::pin::Pin,
-    pac::{CMU, TIMER0, TIMER1},
-    peripherals, Sealed,
+    peripherals,
+    timer::irq::{default_handler, TIMER0_HANDLER, TIMER1_HANDLER},
+    Sealed,
 };
 use core::{convert::Infallible, marker::PhantomData};
 use embassy_hal_internal::Peri;
@@ -21,6 +21,14 @@ use embedded_hal::{
     digital::OutputPin,
     pwm::{ErrorType, SetDutyCycle},
 };
+
+/// Timer peripheral ID
+pub enum TimerId {
+    /// Timer0 peripheral
+    Timer0,
+    /// Timer1 peripheral
+    Timer1,
+}
 
 /// A timer peripheral instance usable by the HAL timer driver.
 ///
@@ -32,29 +40,34 @@ use embedded_hal::{
 pub trait TimerInstance: Sealed + embassy_hal_internal::PeripheralType + 'static {
     /// Returns the chiptool PAC register-block handle for this timer instance.
     fn regs(&self) -> crate::pac::timer::Timer;
-    /// Enables the HF peripheral clock for this timer instance.
-    fn enable_clock(&self);
+    /// Timer peripheral ID
+    fn id(&self) -> TimerId;
 }
 
 impl Sealed for peripherals::Timer0 {}
 impl TimerInstance for peripherals::Timer0 {
     fn regs(&self) -> crate::pac::timer::Timer {
-        TIMER0
+        crate::pac::TIMER0
     }
-    fn enable_clock(&self) {
-        CMU.hfperclken0().modify(|w| w.set_timer0(true));
+
+    fn id(&self) -> TimerId {
+        TimerId::Timer0
     }
 }
 
 impl Sealed for peripherals::Timer1 {}
 impl TimerInstance for peripherals::Timer1 {
     fn regs(&self) -> crate::pac::timer::Timer {
-        TIMER1
+        crate::pac::TIMER1
     }
-    fn enable_clock(&self) {
-        CMU.hfperclken0().modify(|w| w.set_timer1(true));
+
+    fn id(&self) -> TimerId {
+        TimerId::Timer1
     }
 }
+
+/// Handler function for a DMA interrupt
+pub type TimerIrqHandler = fn();
 
 /// Timer
 #[derive(Debug)]
@@ -64,16 +77,18 @@ pub struct Timer<'d, T: TimerInstance> {
 }
 
 impl<'d, T: TimerInstance> Timer<'d, T> {
-    /// FIXME: take a (timer counter) frequency as parameter and do a best effort to set the timer prescaler and the
-    ///        `top` value to get as close as possible
     pub fn new(peri: Peri<'d, T>, config: TimerConfig) -> Self {
-        // Enable the timer peripheral clock for this instance.
-        peri.enable_clock();
-        let p = peri.regs();
-
-        p.cmd().write(|w| w.set_stop(true));
         let instance = Self { peri };
+        let p = instance.peri.regs();
 
+        // Disable the timer peripheral clock for this instance.
+        crate::pac::CMU
+            .hfperclken0()
+            .modify(|w| w.set_timer(instance.peri.id() as usize, false));
+
+        // FIXME: reset interrupts, etc
+
+        // p.cmd().write(|w| w.set_stop(true));
         p.ctrl().write(|w| {
             w.set_mode(config.mode);
             w.set_clksel(config.clock);
@@ -83,25 +98,42 @@ impl<'d, T: TimerInstance> Timer<'d, T> {
         p.top().write(|w| w.set_top(config.top));
         p.top().write(|w| w.set_top(config.top));
 
-        for (i, ch_config) in config.channels.configs.iter().enumerate() {
-            let id = ChannelId::from_u8_unchecked(i as u8);
-            let ch = instance.ch(id);
-            ch.ctrl().write(|w| {
+        for (id, ch_config) in config
+            .channels
+            .configs
+            .iter()
+            .enumerate()
+            .map(|(i, c)| (ChannelId::from_u8_unchecked(i as u8), c))
+        {
+            instance.peri.regs().cc(id as usize).ctrl().write(|w| {
                 w.set_mode(ch_config.mode);
-                match ch_config.input_sel {
-                    CcInputSel::Pin(loc) => {
-                        w.set_insel(false);
-                        instance.set_ch_loc(id, loc);
-                    }
-                    CcInputSel::Prs(prssel) => {
-                        w.set_insel(true);
-                        w.set_prssel(prssel);
-                    }
-                }
                 w.set_icedge(ch_config.ic_edge_select);
                 w.set_icevctrl(ch_config.ic_event_control);
             });
+            match ch_config.input_sel {
+                CcInputSel::Pin(loc) => {
+                    instance.peri.regs().cc(id as usize).ctrl().modify(|w| {
+                        w.set_insel(false);
+                    });
+                    instance
+                        .peri
+                        .regs()
+                        .routeloc0()
+                        .modify(|w| w.set_cc_loc(id as usize, loc));
+                }
+                CcInputSel::Prs(prssel) => {
+                    instance.peri.regs().cc(id as usize).ctrl().modify(|w| {
+                        w.set_insel(true);
+                        w.set_prssel(prssel);
+                    });
+                }
+            }
         }
+
+        // Enable the timer peripheral clock
+        crate::pac::CMU
+            .hfperclken0()
+            .modify(|w| w.set_timer(instance.peri.id() as usize, true));
 
         instance
     }
@@ -141,22 +173,26 @@ impl<'d, T: TimerInstance> Timer<'d, T> {
         )
     }
 
-    fn ch(&self, id: ChannelId) -> crate::pac::timer::Channel {
-        match id {
-            ChannelId::Id0 => self.peri.regs().cc0(),
-            ChannelId::Id1 => self.peri.regs().cc1(),
-            ChannelId::Id2 => self.peri.regs().cc2(),
-            ChannelId::Id3 => self.peri.regs().cc3(),
+    pub(crate) fn set_irq_handler(&mut self, handler: TimerIrqHandler) {
+        match self.peri.id() {
+            TimerId::Timer0 => {
+                critical_section::with(|cs| TIMER0_HANDLER.borrow(cs).replace(handler));
+            }
+            TimerId::Timer1 => {
+                critical_section::with(|cs| TIMER1_HANDLER.borrow(cs).replace(handler));
+            }
         }
     }
 
-    fn set_ch_loc(&self, id: ChannelId, loc: CcLoc) {
-        self.peri.regs().routeloc0().modify(|w| match id {
-            ChannelId::Id0 => w.set_cc0loc(loc),
-            ChannelId::Id1 => w.set_cc1loc(loc),
-            ChannelId::Id2 => w.set_cc2loc(loc),
-            ChannelId::Id3 => w.set_cc3loc(loc),
-        });
+    pub(crate) fn clear_irq_handler(&mut self) {
+        match self.peri.id() {
+            TimerId::Timer0 => {
+                critical_section::with(|cs| TIMER0_HANDLER.borrow(cs).replace(default_handler));
+            }
+            TimerId::Timer1 => {
+                critical_section::with(|cs| TIMER1_HANDLER.borrow(cs).replace(default_handler));
+            }
+        }
     }
 }
 
@@ -165,11 +201,11 @@ impl<'d, T: TimerInstance> Timer<'d, T> {
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct TimerConfig {
     /// Counting mode for the Timer (`MODE`)
-    pub mode: Mode,
+    pub mode: CtrlMode,
     /// Clock source for the timer (`CLKSEL`)
-    pub clock: Source,
+    pub clock: Clksel,
     /// Prescaling factor (`PRESC`)
-    pub presc: Prescaler,
+    pub presc: Presc,
     /// Initial counter value (`CNT`)
     pub count: u16,
     /// Top value for the counter (`TOP`)
@@ -183,9 +219,9 @@ pub struct TimerConfig {
 impl Default for TimerConfig {
     fn default() -> Self {
         Self {
-            mode: Mode::Up,
-            clock: Source::Preschfperclk,
-            presc: Prescaler::Div1,
+            mode: CtrlMode::Up,
+            clock: Clksel::Preschfperclk,
+            presc: Presc::Div1,
             count: Default::default(),
             top: u16::MAX,
             channels: Default::default(),
@@ -289,7 +325,7 @@ pub enum CcInputSel {
     /// TIMERnCCx pin is selected
     Pin(CcLoc),
     /// PRS input (selected by PRSSEL) is selected
-    Prs(Prssel),
+    Prs(CcCtrlPrssel),
 }
 
 impl Default for CcInputSel {
@@ -317,45 +353,14 @@ impl<'d, T: TimerInstance, const CN: u8> TimerChannel<'d, T, CN> {
         // channels and any of them is used as PWM, we need to allow the PWM channel to set its compare value to TOP + 1
         // in order to achieve 100% duty cycle
 
-        match CN {
-            0 => {
-                p.routeloc0().write(|w| w.set_cc0loc(pin.loc()));
-                p.cc0().ctrl().write(|w| {
-                    w.set_icedge(CcCtrlIcedge::Both);
-                    w.set_cmoa(CcCtrlCmoa::Toggle);
-                    w.set_mode(CcCtrlMode::Pwm)
-                });
-                p.routepen().modify(|w| w.set_cc0pen(true));
-            }
-            1 => {
-                p.routeloc0().write(|w| w.set_cc1loc(pin.loc()));
-                p.cc1().ctrl().write(|w| {
-                    w.set_icedge(CcCtrlIcedge::Both);
-                    w.set_cmoa(CcCtrlCmoa::Toggle);
-                    w.set_mode(CcCtrlMode::Pwm)
-                });
-                p.routepen().modify(|w| w.set_cc1pen(true));
-            }
-            2 => {
-                p.routeloc0().write(|w| w.set_cc2loc(pin.loc()));
-                p.cc2().ctrl().write(|w| {
-                    w.set_icedge(CcCtrlIcedge::Both);
-                    w.set_cmoa(CcCtrlCmoa::Toggle);
-                    w.set_mode(CcCtrlMode::Pwm)
-                });
-                p.routepen().modify(|w| w.set_cc2pen(true));
-            }
-            3 => {
-                p.routeloc0().write(|w| w.set_cc3loc(pin.loc()));
-                p.cc3().ctrl().write(|w| {
-                    w.set_icedge(CcCtrlIcedge::Both);
-                    w.set_cmoa(CcCtrlCmoa::Toggle);
-                    w.set_mode(CcCtrlMode::Pwm)
-                });
-                p.routepen().modify(|w| w.set_cc3pen(true));
-            }
-            _ => unreachable!(),
-        }
+        p.routeloc0()
+            .modify(|w| w.set_cc_loc(CN as usize, pin.loc()));
+        p.cc(CN as usize).ctrl().write(|w| {
+            w.set_icedge(CcCtrlIcedge::Both);
+            w.set_cmoa(CcCtrlCmoa::Toggle);
+            w.set_mode(CcCtrlMode::Pwm)
+        });
+        p.routepen().modify(|w| w.set_cc_pen(CN as usize, true));
 
         TimerChannelPwm {
             peri: self.peri,
@@ -369,25 +374,9 @@ impl<'d, T: TimerInstance, const CN: u8> TimerChannel<'d, T, CN> {
         let timer_div: u8 = p.ctrl().read().presc().to_bits();
         let timer_freq = clocks.hf_per_clk() / (timer_div + 1) as u32;
 
-        match CN {
-            0 => p
-                .cc0()
-                .ctrl()
-                .write(|w| w.set_mode(CcCtrlMode::Outputcompare)),
-            1 => p
-                .cc1()
-                .ctrl()
-                .write(|w| w.set_mode(CcCtrlMode::Outputcompare)),
-            2 => p
-                .cc2()
-                .ctrl()
-                .write(|w| w.set_mode(CcCtrlMode::Outputcompare)),
-            3 => p
-                .cc3()
-                .ctrl()
-                .write(|w| w.set_mode(CcCtrlMode::Outputcompare)),
-            _ => unreachable!(),
-        };
+        p.cc(CN as usize)
+            .ctrl()
+            .write(|w| w.set_mode(CcCtrlMode::Outputcompare));
 
         TimerChannelDelay {
             peri: self.peri,
@@ -426,62 +415,16 @@ impl<'d, T: TimerInstance, const CN: u8> DelayNs for TimerChannelDelay<'d, T, CN
             let mut compare = (reference_count + reload) % reload_max;
 
             while ticks_left > 0 {
-                match CN {
-                    0 => {
-                        // clear interrupt flag
-                        p.ifc().write(|w| w.set_cc0(true));
-
-                        // set compare
-                        p.cc0().ccv().write(|w| w.set_ccv(compare as u16));
-
-                        // enable channel interrupt
-                        p.ien().write(|w| w.set_cc0(true));
-                    }
-                    1 => {
-                        // clear interrupt flag
-                        p.ifc().write(|w| w.set_cc1(true));
-
-                        // set compare
-                        p.cc1().ccv().write(|w| w.set_ccv(compare as u16));
-
-                        // enable channel interrupt
-                        p.ien().write(|w| w.set_cc1(true));
-                    }
-                    2 => {
-                        // clear interrupt flag
-                        p.ifc().write(|w| w.set_cc2(true));
-
-                        // set compare
-                        p.cc2().ccv().write(|w| w.set_ccv(compare as u16));
-
-                        // enable channel interrupt
-                        p.ien().write(|w| w.set_cc2(true));
-                    }
-                    3 => {
-                        // clear interrupt flag
-                        p.ifc().write(|w| w.set_cc3(true));
-
-                        // set compare
-                        p.cc3().ccv().write(|w| w.set_ccv(compare as u16));
-
-                        // enable channel interrupt
-                        p.ien().write(|w| w.set_cc3(true));
-                    }
-                    _ => unreachable!(),
-                }
+                p.ifc().write(|w| w.set_cc(CN as usize, true));
+                p.cc(CN as usize).ccv().write(|w| w.set_ccv(compare as u16));
+                p.ien().modify(|w| w.set_cc(CN as usize, true));
 
                 // calculate next loop's values _before_ waiting so that the jitter between loops is minimal
                 ticks_left -= reload;
                 reload = ticks_left.min(reload_max);
                 compare = (reference_count + reload) % reload_max;
 
-                match CN {
-                    0 => while !p.if_().read().cc0() {},
-                    1 => while !p.if_().read().cc1() {},
-                    2 => while !p.if_().read().cc2() {},
-                    3 => while !p.if_().read().cc3() {},
-                    _ => unreachable!(),
-                }
+                while !p.if_().read().cc(CN as usize) {}
             }
         }
     }
@@ -508,15 +451,11 @@ where
     }
 
     fn set_duty_cycle(&mut self, duty: u16) -> Result<(), Self::Error> {
-        let p = self.peri.regs();
-
-        match CN {
-            0 => p.cc0().ccvb().write(|w| w.set_ccvb(duty)),
-            1 => p.cc1().ccvb().write(|w| w.set_ccvb(duty)),
-            2 => p.cc2().ccvb().write(|w| w.set_ccvb(duty)),
-            3 => p.cc3().ccvb().write(|w| w.set_ccvb(duty)),
-            _ => unreachable!(),
-        };
+        self.peri
+            .regs()
+            .cc(CN as usize)
+            .ccvb()
+            .write(|w| w.set_ccvb(duty));
 
         Ok(())
     }
