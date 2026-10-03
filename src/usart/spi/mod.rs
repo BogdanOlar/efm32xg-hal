@@ -36,9 +36,9 @@ pub struct SpiBlocking<'d, T: UsartInstance> {
 
 impl<'d, T: UsartInstance> SpiBlocking<'d, T> {
     /// New blocking SPI master
-    pub fn new(pins: SpiParts<'d, T>, config: &Config) -> Self {
+    pub fn new(parts: SpiParts<'d, T>, config: &Config) -> Self {
         Self {
-            low_level: SpiLowLevel::new(pins, config),
+            low_level: SpiLowLevel::new(parts, config),
         }
     }
 

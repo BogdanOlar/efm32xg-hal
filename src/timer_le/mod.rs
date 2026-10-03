@@ -23,18 +23,6 @@ use cortex_m::asm::nop;
 use embassy_hal_internal::Peri;
 use embedded_hal::digital::OutputPin;
 
-/// Extension trait for the LETIMER peripheral singleton.
-///
-/// Implemented only for [`peripherals::Letimer`]; call it on the singleton obtained from
-/// [`crate::efm32_init`] (e.g. `p.Letimer.into_timer()`), which consumes it so a second driver
-/// cannot be built on the same peripheral.
-pub trait LeTimerExt {
-    /// Timer type
-    type Timer;
-    /// Convert to HAL timer
-    fn into_timer(self) -> Self::Timer;
-}
-
 /// LeTimer peripheral ID
 pub enum LeTimerId {
     /// Low Energy Timer 0
@@ -89,7 +77,7 @@ impl<'d, T: LeTimerInstance> LeTimer<'d, T> {
     where
         PIN: OutputPin + LeTimerPin<0>,
     {
-        let le_timer = mmio::timer_le();
+        let le_timer = self.peri.regs();
 
         le_timer.rep0().write(|w| w.set_rep0(1));
         le_timer.comp0().write(|w| w.set_comp0(1000));

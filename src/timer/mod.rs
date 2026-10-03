@@ -71,6 +71,7 @@ pub struct Timer<'d, T: TimerInstance> {
 }
 
 impl<'d, T: TimerInstance> Timer<'d, T> {
+    /// New Timer driver
     pub fn new(peri: Peri<'d, T>, config: TimerConfig) -> Self {
         let instance = Self { peri };
         let p = instance.peri.regs();
