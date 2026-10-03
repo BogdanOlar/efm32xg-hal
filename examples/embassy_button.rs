@@ -1,11 +1,12 @@
 #![no_std]
 #![no_main]
 
+use cortex_m::peripheral::NVIC;
 use defmt_rtt as _;
 use efm32xg_hal::{
     gpio::{dynamic::DynamicPin, efemb::AsyncInputPin},
     init,
-    pac::{self, Interrupt, NVIC},
+    pac::Interrupt,
     prelude::*,
     timer_le::efemb::Ticker,
 };

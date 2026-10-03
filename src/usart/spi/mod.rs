@@ -90,18 +90,22 @@ struct SpiLowLevel<'d, T: UsartInstance> {
 
 impl<'d, T: UsartInstance> SpiLowLevel<'d, T> {
     pub(crate) fn new(pins: SpiParts<'d, T>, config: &Config) -> Self {
-        let usart_p = pins.peri.regs();
-
-        let mut low_level = Self {
+        let mut instance = Self {
             peri: pins.peri,
             pin_clk: pins.pin_clk,
             pin_tx: pins.pin_tx,
             pin_rx: pins.pin_rx,
         };
+        let p = instance.peri.regs();
 
-        low_level.reset();
+        // Enable clock
+        crate::pac::CMU
+            .hfperclken0()
+            .modify(|w| w.set_usart(instance.peri.id() as usize, true));
 
-        usart_p.ctrl().write(|w| {
+        instance.reset();
+
+        p.ctrl().write(|w| {
             // Set USART to Synchronous Mode
             w.set_sync(true);
             // Most significant bit first (the exact bit order is re-applied from `config` below)
@@ -110,7 +114,7 @@ impl<'d, T: UsartInstance> SpiLowLevel<'d, T> {
             w.set_autotx(false)
         });
 
-        usart_p.frame().write(|w| {
+        p.frame().write(|w| {
             // 8 data bits
             w.set_databits(Databits::Eight);
             // 1 stop bit
@@ -120,36 +124,36 @@ impl<'d, T: UsartInstance> SpiLowLevel<'d, T> {
         });
 
         // Master enable
-        usart_p.cmd().write(|w| w.set_masteren(true));
+        p.cmd().write(|w| w.set_masteren(true));
 
-        usart_p.ctrl().modify(|w| {
+        p.ctrl().modify(|w| {
             // Auto CS: a `SpiBus` implementation must not control CS pin
             w.set_autocs(false);
             // No CS invert
             w.set_csinv(false)
         });
 
-        usart_p.timing().modify(|w| {
+        p.timing().modify(|w| {
             w.set_cshold(Cshold::Zero);
             w.set_cssetup(Cssetup::Zero)
         });
 
         // Set IO pin routing for Usart
-        usart_p.routeloc0().modify(|w| {
+        p.routeloc0().modify(|w| {
             w.set_clkloc(Clkloc::from_bits(pins.clk_loc));
             w.set_txloc(Txloc::from_bits(pins.tx_loc));
             w.set_rxloc(Rxloc::from_bits(pins.rx_loc))
         });
 
         // Enable IO pins for Usart
-        usart_p.routepen().modify(|w| {
+        p.routepen().modify(|w| {
             w.set_clkpen(true);
             w.set_txpen(true);
             w.set_rxpen(true)
         });
 
         // Enable Usart
-        usart_p.cmd().write(|w| {
+        p.cmd().write(|w| {
             w.set_rxen(true);
             w.set_txen(true)
         });
@@ -157,9 +161,9 @@ impl<'d, T: UsartInstance> SpiLowLevel<'d, T> {
         // Apply the SPI operating configuration (mode, bit order, loopback, sample delay,
         // baudrate divider). This is the same path as `set_config`, so the initial state of the
         // driver matches a subsequent runtime reconfiguration.
-        low_level.set_config(config);
+        instance.set_config(config);
 
-        low_level
+        instance
     }
 
     /// Release the resources used to create this SPI instance
@@ -338,12 +342,6 @@ impl<'d, T: UsartInstance> SpiParts<'d, T> {
         PTX: OutputPin + UsartTxPin + PinInfo,
         PRX: InputPin + UsartRxPin + PinInfo,
     {
-        // Enable the clock for this USART and reset its registers.
-        peri.enable_clock();
-
-        // TODO: handle reset
-        // peri.reset();
-
         // Extract the routing locations before erasing, since `UsartClkPin`/`UsartTxPin`/
         // `UsartRxPin` are only implemented for `Pin` types.
         let clk_loc = pin_clk.loc();

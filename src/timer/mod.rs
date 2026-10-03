@@ -31,12 +31,6 @@ pub enum TimerId {
 }
 
 /// A timer peripheral instance usable by the HAL timer driver.
-///
-/// This is a sealed trait implemented only for the singleton types in [`crate::peripherals`]:
-/// [`peripherals::Timer0`] and [`peripherals::Timer1`]. Because each instance is a distinct,
-/// uninstantiable type obtained only from [`crate::efm32_init`], a timer peripheral cannot be
-/// driven by two [`Timer`] instances at once — the singleton is moved into the first driver and
-/// any second use fails to compile.
 pub trait TimerInstance: Sealed + embassy_hal_internal::PeripheralType + 'static {
     /// Returns the chiptool PAC register-block handle for this timer instance.
     fn regs(&self) -> crate::pac::timer::Timer;

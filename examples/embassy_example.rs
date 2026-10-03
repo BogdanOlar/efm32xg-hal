@@ -17,17 +17,25 @@ const TASK_COUNT: usize = 10;
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
     let p = init();
-    let clocks = Cmu::new(p.Cmu)
+    #[cfg(feature = "efemb-timdrv-letim0-hz-32_768")]
+    let _clocks = Cmu::new(p.Cmu)
         // Prescaling the HF clock to the lowest frequency possible, to stress test the scheduler algorithm
         // .with_hf_clk(HfClockSource::HfRco, HfClockPrescaler::Div32)
         // .with_hf_clk(HfClockSource::HfXO(40_000_000), HfClockPrescaler::Div1);
-        .with_hf_clk(HfClockSource::HfRco, HfClockPrescaler::Div1).freeze();
+        .with_hf_clk(HfClockSource::HfRco, HfClockPrescaler::Div1)
+        // Make sure LfAClk is enabled otherwise the LeTimer Ticker won't work
+        .with_lfa_clk(LfClockSource::LfRco)
+        .freeze();
 
-    // Make sure LfAClk is enabled otherwise the LeTimer0 Ticker won't work
-    #[cfg(feature = "efemb-timdrv-letim0-hz-32_768")]
-    let _clocks = clocks.with_lfa_clk(LfClockSource::LfRco);
     #[cfg(feature = "efemb-timdrv-letim0-hz-1_000")]
-    let _clocks = clocks.with_lfa_clk(LfClockSource::UlfRco);
+    let _clocks = Cmu::new(p.Cmu)
+        // Prescaling the HF clock to the lowest frequency possible, to stress test the scheduler algorithm
+        // .with_hf_clk(HfClockSource::HfRco, HfClockPrescaler::Div32)
+        // .with_hf_clk(HfClockSource::HfXO(40_000_000), HfClockPrescaler::Div1);
+        .with_hf_clk(HfClockSource::HfRco, HfClockPrescaler::Div1)
+        // Make sure LfAClk is enabled otherwise the LeTimer Ticker won't work
+        .with_lfa_clk(LfClockSource::UlfRco)
+        .freeze();
 
     // make sure `defmt` works correctly even if the time driver is not initialized (should show timestamp = 0)
     defmt::info!("\tHello info world!");

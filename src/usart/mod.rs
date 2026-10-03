@@ -36,8 +36,6 @@ pub trait UsartInstance: Sealed + PeripheralType + 'static {
     fn id(&self) -> UsartId;
     /// Returns the chiptool PAC register-block handle for this USART instance.
     fn regs(&self) -> crate::pac::usart::Usart;
-    /// Enables the HF peripheral clock for this USART instance.
-    fn enable_clock(&self);
 }
 
 impl Sealed for peripherals::Usart0 {}
@@ -48,9 +46,6 @@ impl UsartInstance for peripherals::Usart0 {
     fn regs(&self) -> crate::pac::usart::Usart {
         crate::pac::USART0
     }
-    fn enable_clock(&self) {
-        crate::pac::CMU.hfperclken0().modify(|w| w.set_usart0(true));
-    }
 }
 
 impl Sealed for peripherals::Usart1 {}
@@ -60,8 +55,5 @@ impl UsartInstance for peripherals::Usart1 {
     }
     fn regs(&self) -> crate::pac::usart::Usart {
         crate::pac::USART1
-    }
-    fn enable_clock(&self) {
-        crate::pac::CMU.hfperclken0().modify(|w| w.set_usart1(true));
     }
 }

@@ -20,6 +20,7 @@ use crate::{
 };
 use core::marker::PhantomData;
 use cortex_m::asm::nop;
+use embassy_hal_internal::Peri;
 use embedded_hal::digital::OutputPin;
 
 /// Extension trait for the LETIMER peripheral singleton.
@@ -34,28 +35,53 @@ pub trait LeTimerExt {
     fn into_timer(self) -> Self::Timer;
 }
 
-impl Sealed for peripherals::Letimer {}
-impl LeTimerExt for embassy_hal_internal::Peri<'_, peripherals::Letimer> {
-    type Timer = LeTimer;
-    fn into_timer(self) -> Self::Timer {
-        Self::Timer::new()
+/// LeTimer peripheral ID
+pub enum LeTimerId {
+    /// Low Energy Timer 0
+    LeTimer0,
+}
+
+/// A timer peripheral instance usable by the HAL timer driver.
+pub trait LeTimerInstance: Sealed + embassy_hal_internal::PeripheralType + 'static {
+    /// Returns the chiptool PAC register-block handle for this timer instance.
+    fn regs(&self) -> crate::pac::letimer::LeTimer;
+    /// Timer peripheral ID
+    fn id(&self) -> LeTimerId;
+}
+
+impl Sealed for peripherals::LeTimer {}
+impl LeTimerInstance for peripherals::LeTimer {
+    fn regs(&self) -> crate::pac::letimer::LeTimer {
+        crate::pac::LETIMER0
+    }
+
+    fn id(&self) -> LeTimerId {
+        LeTimerId::LeTimer0
     }
 }
 
 /// Low Energy timer
-pub struct LeTimer;
+/// Timer
+#[derive(Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub struct LeTimer<'d, T: LeTimerInstance> {
+    peri: Peri<'d, T>,
+}
 
-impl LeTimer {
-    fn new() -> Self {
+impl<'d, T: LeTimerInstance> LeTimer<'d, T> {
+    /// Instantiate a LeTimer driver
+    pub fn new(peri: Peri<'d, T>) -> Self {
+        let instance = Self { peri };
         // Enable LE Timer
-        CMU.lfaclken0().modify(|w| w.set_letimer0(true));
+        CMU.lfaclken0()
+            .modify(|w| w.set_letimer(instance.peri.id() as usize, true));
 
         // Sync
         while CMU.syncbusy().read().lfaclken0() {
             nop()
         }
 
-        LeTimer {}
+        instance
     }
 
     /// Convert timer to PWM
@@ -93,7 +119,7 @@ impl LeTimer {
 
 mod mmio {
     use cortex_m::asm::nop;
-    use efm32xg_pac::{letimer::Letimer as Timer, LETIMER};
+    use efm32xg_pac::{letimer::LeTimer as Timer, LETIMER0};
 
     /// Reset the timer peripheral
     ///
@@ -264,7 +290,7 @@ mod mmio {
 
     /// Get a reference to the Low Energy Timer register block
     pub(crate) const fn timer_le() -> Timer {
-        LETIMER
+        LETIMER0
     }
 }
 

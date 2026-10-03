@@ -6,7 +6,7 @@ use crate::pac::{
     cmu::vals::{Dbg, Hf, Hfclklepresc, HfperprescPresc, HfprescPresc, Lfa, Lfb, Lfe, Selected},
     cryotimer::vals::Oscsel,
     wdog::vals::Clksel,
-    CMU, CRYOTIMER, WDOG,
+    CMU, CRYOTIMER, WDOG0,
 };
 use cortex_m::asm::nop;
 
@@ -239,16 +239,16 @@ impl Cmu {
         let wdog_clk_freq = match clk_src {
             LfClockSource::LfXO(freq) => {
                 self.enable_lfxo_clock();
-                WDOG.ctrl().modify(|w| w.set_clksel(Clksel::Lfxo));
+                WDOG0.ctrl().modify(|w| w.set_clksel(Clksel::Lfxo));
                 freq
             }
             LfClockSource::LfRco => {
                 self.enable_lfrco_clock();
-                WDOG.ctrl().modify(|w| w.set_clksel(Clksel::Lfrco));
+                WDOG0.ctrl().modify(|w| w.set_clksel(Clksel::Lfrco));
                 DEFAULT_LF_RCO_FREQUENCY
             }
             LfClockSource::UlfRco => {
-                WDOG.ctrl().modify(|w| w.set_clksel(Clksel::Ulfrco));
+                WDOG0.ctrl().modify(|w| w.set_clksel(Clksel::Ulfrco));
                 DEFAULT_ULF_RCO_FREQUENCY
             }
         };

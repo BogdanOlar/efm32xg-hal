@@ -72,7 +72,7 @@ impl Ticker {
         }
 
         // Enable LE Timer
-        CMU.lfaclken0().modify(|w| w.set_letimer0(true));
+        CMU.lfaclken0().modify(|w| w.set_letimer(0, true));
 
         mmio::reset();
         mmio::comp1_set(0);
