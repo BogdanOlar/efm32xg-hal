@@ -271,8 +271,6 @@ pub struct TimerConfig {
     /// Initial counter value (`CNT`)
     pub count: u16,
     /// Top value for the counter (`TOP`)
-    ///
-    /// Default value is `u16::MAX`, since it makes more sense than `0`
     pub top: u16,
     /// Capture/Compare configs for channels
     pub channels: ChannelCofigs,
@@ -285,7 +283,7 @@ impl Default for TimerConfig {
             clock: Clksel::Preschfperclk,
             presc: Presc::Div1,
             count: Default::default(),
-            top: u16::MAX,
+            top: Default::default(),
             channels: Default::default(),
         }
     }
