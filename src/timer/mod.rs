@@ -11,6 +11,7 @@ use crate::{
     cmu::Clocks,
     gpio::pin::Pin,
     peripherals,
+    prs::PrsChannelId,
     timer::irq::{default_handler, TIMER0_HANDLER, TIMER1_HANDLER},
     Sealed,
 };
@@ -93,34 +94,49 @@ impl<'d, T: TimerInstance> Timer<'d, T> {
         p.top().write(|w| w.set_top(config.top));
         p.top().write(|w| w.set_top(config.top));
 
-        for (id, ch_config) in config
+        for (timer_channel_id, ch_config) in config
             .channels
             .configs
             .iter()
             .enumerate()
-            .map(|(i, c)| (ChannelId::from_u8_unchecked(i as u8), c))
+            .map(|(i, c)| (TimerChannelId::from_u8_unchecked(i as u8), c))
         {
-            instance.peri.regs().cc(id as usize).ctrl().write(|w| {
-                w.set_mode(ch_config.mode);
-                w.set_icedge(ch_config.ic_edge_select);
-                w.set_icevctrl(ch_config.ic_event_control);
-            });
+            instance
+                .peri
+                .regs()
+                .cc(timer_channel_id as usize)
+                .ctrl()
+                .write(|w| {
+                    w.set_mode(ch_config.mode);
+                    w.set_icedge(ch_config.ic_edge_select);
+                    w.set_icevctrl(ch_config.ic_event_control);
+                });
             match ch_config.input_sel {
                 CcInputSel::Pin(loc) => {
-                    instance.peri.regs().cc(id as usize).ctrl().modify(|w| {
-                        w.set_insel(false);
-                    });
+                    instance
+                        .peri
+                        .regs()
+                        .cc(timer_channel_id as usize)
+                        .ctrl()
+                        .modify(|w| {
+                            w.set_insel(false);
+                        });
                     instance
                         .peri
                         .regs()
                         .routeloc0()
-                        .modify(|w| w.set_cc_loc(id as usize, loc));
+                        .modify(|w| w.set_cc_loc(timer_channel_id as usize, loc));
                 }
-                CcInputSel::Prs(prssel) => {
-                    instance.peri.regs().cc(id as usize).ctrl().modify(|w| {
-                        w.set_insel(true);
-                        w.set_prssel(prssel);
-                    });
+                CcInputSel::Prs(prs_channel_id) => {
+                    instance
+                        .peri
+                        .regs()
+                        .cc(timer_channel_id as usize)
+                        .ctrl()
+                        .modify(|w| {
+                            w.set_insel(true);
+                            w.set_prssel(CcCtrlPrssel::from_bits(prs_channel_id as u8));
+                        });
                 }
             }
         }
@@ -191,6 +207,57 @@ impl<'d, T: TimerInstance> Timer<'d, T> {
     }
 }
 
+/// Timer channel
+#[derive(Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub struct TimerChannel<'d, T: TimerInstance, const CN: u8> {
+    peri: Peri<'d, T>,
+}
+
+impl<'d, T: TimerInstance, const CN: u8> TimerChannel<'d, T, CN> {
+    /// Convert timer channel to a PWM
+    pub fn into_pwm<PIN>(self, pin: PIN) -> TimerChannelPwm<'d, T, CN, PIN>
+    where
+        PIN: OutputPin + TimerPin<CN>,
+    {
+        let p = self.peri.regs();
+
+        // FIXME: PWM - Set the resolution of the counter to MAX - 1 because if the timer is going to be split into
+        // channels and any of them is used as PWM, we need to allow the PWM channel to set its compare value to TOP + 1
+        // in order to achieve 100% duty cycle
+
+        p.routeloc0()
+            .modify(|w| w.set_cc_loc(CN as usize, pin.loc()));
+        p.cc(CN as usize).ctrl().write(|w| {
+            w.set_icedge(CcCtrlIcedge::Both);
+            w.set_cmoa(CcCtrlCmoa::Toggle);
+            w.set_mode(CcCtrlMode::Pwm)
+        });
+        p.routepen().modify(|w| w.set_cc_pen(CN as usize, true));
+
+        TimerChannelPwm {
+            peri: self.peri,
+            _pwm_pin: PhantomData,
+        }
+    }
+
+    /// Convert timer to a Delay
+    pub fn into_delay(self, clocks: &Clocks) -> TimerChannelDelay<'d, T, CN> {
+        let p = self.peri.regs();
+        let timer_div: u8 = p.ctrl().read().presc().to_bits();
+        let timer_freq = clocks.hf_per_clk() / (timer_div + 1) as u32;
+
+        p.cc(CN as usize)
+            .ctrl()
+            .write(|w| w.set_mode(CcCtrlMode::Outputcompare));
+
+        TimerChannelDelay {
+            peri: self.peri,
+            timer_freq,
+        }
+    }
+}
+
 /// Timer driver config
 #[derive(Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
@@ -228,28 +295,28 @@ impl Default for TimerConfig {
 #[derive(Debug, Default, Clone, Copy)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[repr(u8)]
-pub enum ChannelId {
+pub enum TimerChannelId {
     /// Timer Capture/Compare Channel 0
     #[default]
-    Id0,
+    Ch0,
     /// Timer Capture/Compare Channel 1
-    Id1,
+    Ch1,
     /// Timer Capture/Compare Channel 2
-    Id2,
+    Ch2,
     /// Timer Capture/Compare Channel 3
-    Id3,
+    Ch3,
 }
 
-impl ChannelId {
+impl TimerChannelId {
     /// Number of Timer CC channels
     pub const COUNT: usize = 4;
 
     pub(crate) const fn from_u8_unchecked(id: u8) -> Self {
         match id & 0b11 {
-            0 => ChannelId::Id0,
-            1 => ChannelId::Id1,
-            2 => ChannelId::Id2,
-            3 => ChannelId::Id3,
+            0 => TimerChannelId::Ch0,
+            1 => TimerChannelId::Ch1,
+            2 => TimerChannelId::Ch2,
+            3 => TimerChannelId::Ch3,
             _ => unreachable!(),
         }
     }
@@ -302,12 +369,12 @@ impl Default for CcConfig {
 #[derive(Debug, Default, Clone, Copy)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct ChannelCofigs {
-    configs: [CcConfig; ChannelId::COUNT],
+    configs: [CcConfig; TimerChannelId::COUNT],
 }
 
 impl ChannelCofigs {
     /// Set config for the Capture/Compare channel with the given `id`
-    pub fn with_cc_config(mut self, id: ChannelId, config: CcConfig) -> Self {
+    pub fn with_cc_config(mut self, id: TimerChannelId, config: CcConfig) -> Self {
         self.configs[id as usize] = config;
         self
     }
@@ -320,63 +387,12 @@ pub enum CcInputSel {
     /// TIMERnCCx pin is selected
     Pin(CcLoc),
     /// PRS input (selected by PRSSEL) is selected
-    Prs(CcCtrlPrssel),
+    Prs(PrsChannelId),
 }
 
 impl Default for CcInputSel {
     fn default() -> Self {
         Self::Pin(CcLoc::Loc0)
-    }
-}
-
-/// Timer channel
-#[derive(Debug)]
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub struct TimerChannel<'d, T: TimerInstance, const CN: u8> {
-    peri: Peri<'d, T>,
-}
-
-impl<'d, T: TimerInstance, const CN: u8> TimerChannel<'d, T, CN> {
-    /// Convert timer channel to a PWM
-    pub fn into_pwm<PIN>(self, pin: PIN) -> TimerChannelPwm<'d, T, CN, PIN>
-    where
-        PIN: OutputPin + TimerPin<CN>,
-    {
-        let p = self.peri.regs();
-
-        // FIXME: PWM - Set the resolution of the counter to MAX - 1 because if the timer is going to be split into
-        // channels and any of them is used as PWM, we need to allow the PWM channel to set its compare value to TOP + 1
-        // in order to achieve 100% duty cycle
-
-        p.routeloc0()
-            .modify(|w| w.set_cc_loc(CN as usize, pin.loc()));
-        p.cc(CN as usize).ctrl().write(|w| {
-            w.set_icedge(CcCtrlIcedge::Both);
-            w.set_cmoa(CcCtrlCmoa::Toggle);
-            w.set_mode(CcCtrlMode::Pwm)
-        });
-        p.routepen().modify(|w| w.set_cc_pen(CN as usize, true));
-
-        TimerChannelPwm {
-            peri: self.peri,
-            _pwm_pin: PhantomData,
-        }
-    }
-
-    /// Convert timer to a Delay
-    pub fn into_delay(self, clocks: &Clocks) -> TimerChannelDelay<'d, T, CN> {
-        let p = self.peri.regs();
-        let timer_div: u8 = p.ctrl().read().presc().to_bits();
-        let timer_freq = clocks.hf_per_clk() / (timer_div + 1) as u32;
-
-        p.cc(CN as usize)
-            .ctrl()
-            .write(|w| w.set_mode(CcCtrlMode::Outputcompare));
-
-        TimerChannelDelay {
-            peri: self.peri,
-            timer_freq,
-        }
     }
 }
 

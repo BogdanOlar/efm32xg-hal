@@ -15,6 +15,8 @@ pub mod cmu;
 pub mod crc;
 pub mod dma;
 pub mod gpio;
+pub mod prs;
+pub mod rtcc;
 pub mod timer;
 pub mod timer_le;
 pub mod usart;
@@ -37,7 +39,7 @@ pub(crate) use sealed::Sealed;
 // should eventually be generated per-chip (and pins added) like embassy-stm32's `build.rs`.
 embassy_hal_internal::peripherals!(
     Acmp0, Acmp1, Adc, Idac, Gpio, I2c, Usart0, Usart1, Timer0, Timer1, Gpcrc, Cryotimer, Rtcc,
-    LeTimer, LeUart, Pcnt, Wdog, Msc, Fpueh, Ldma, Emu, Cmu, Rmu, Prs, Crypto,
+    LeTimer0, LeUart0, Pcnt, Wdog0, Msc, Fpueh, Ldma, Emu, Cmu, Rmu, Prs, Crypto,
 );
 
 pub use embassy_hal_internal::{Peri, PeripheralType};

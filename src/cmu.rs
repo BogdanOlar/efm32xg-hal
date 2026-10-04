@@ -5,6 +5,7 @@ use crate::gpio::{pin::mode::OutputMode, pin::Pin};
 use crate::pac::{
     cmu::vals::{Dbg, Hf, Hfclklepresc, HfperprescPresc, HfprescPresc, Lfa, Lfb, Lfe, Selected},
     cryotimer::vals::Oscsel,
+    msc,
     wdog::vals::Clksel,
     CMU, CRYOTIMER, WDOG0,
 };
@@ -58,11 +59,38 @@ impl Cmu {
 
         let hf_src_clk_freq = match clk_src {
             HfClockSource::HfXO(freq) => {
+                // Prepare flash and Low Energy peripherals (going to higher frequency)
+                // see `10.3.3 Configuration for Operating Frequencies`
+                {
+                    if freq > 25_000_000 {
+                        crate::pac::MSC
+                            .readctrl()
+                            .modify(|w| w.set_mode(msc::vals::Mode::Ws1));
+                    }
+                    if freq > 32_000_000 {
+                        CMU.ctrl().modify(|w| w.set_wshfle(true));
+                    }
+                }
+
                 CMU.oscencmd().write(|w| w.set_hfxoen(true));
                 while !CMU.status().read().hfxordy() {
                     nop();
                 }
                 CMU.hfclksel().write(|w| w.set_hf(Hf::Hfxo));
+
+                // Prepare flash and Low Energy peripherals (going to lower frequency)
+                // see `10.3.3 Configuration for Operating Frequencies`
+                {
+                    if freq <= 25_000_000 {
+                        crate::pac::MSC
+                            .readctrl()
+                            .modify(|w| w.set_mode(msc::vals::Mode::Ws0));
+                    }
+                    if freq <= 32_000_000 {
+                        CMU.ctrl().modify(|w| w.set_wshfle(false));
+                    }
+                }
+
                 freq
             }
             HfClockSource::HfRco => {
@@ -587,6 +615,18 @@ pub enum LfBClockSource {
 pub enum CmuError {
     /// Invalid value for the Hf Peripheral Clock divider
     InvalidHfPerDivider(u16),
+}
+
+/// CMU Clock Output channel IDs
+#[derive(Debug, Default, Clone, Copy)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+#[repr(u8)]
+pub enum CmuClkOutId {
+    /// CMU Clock Output 0
+    #[default]
+    Output0,
+    /// CMU Clock Output 1
+    Output1,
 }
 
 pub trait CmuPin0 {

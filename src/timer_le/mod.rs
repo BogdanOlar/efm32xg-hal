@@ -37,8 +37,8 @@ pub trait LeTimerInstance: Sealed + embassy_hal_internal::PeripheralType + 'stat
     fn id(&self) -> LeTimerId;
 }
 
-impl Sealed for peripherals::LeTimer {}
-impl LeTimerInstance for peripherals::LeTimer {
+impl Sealed for peripherals::LeTimer0 {}
+impl LeTimerInstance for peripherals::LeTimer0 {
     fn regs(&self) -> crate::pac::letimer::LeTimer {
         crate::pac::LETIMER0
     }
@@ -101,6 +101,28 @@ impl<'d, T: LeTimerInstance> LeTimer<'d, T> {
 
         LeTimerPwm {
             _pwm_pin: PhantomData,
+        }
+    }
+}
+
+/// LeTimer Compare Channel ID
+#[derive(Debug, Default, Clone, Copy)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+#[repr(u8)]
+pub enum LeTimerChannelId {
+    /// LeTimer Compare Channel ID 0
+    #[default]
+    Ch0,
+    /// LeTimer Compare Channel ID 1
+    Ch1,
+}
+
+impl LeTimerChannelId {
+    pub(crate) const fn from_u8_unchecked(id: u8) -> Self {
+        match id & 0b1 {
+            0 => LeTimerChannelId::Ch0,
+            1 => LeTimerChannelId::Ch1,
+            _ => unreachable!(),
         }
     }
 }
