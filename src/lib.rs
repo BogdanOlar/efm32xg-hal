@@ -11,6 +11,7 @@
 
 pub use efm32xg_pac as pac;
 
+pub mod acmp;
 pub mod cmu;
 pub mod crc;
 pub mod dma;
