@@ -78,13 +78,18 @@ impl<'d, T: AcmpInstance> Acmp<'d, T> {
             .hfperclken0()
             .modify(|w| w.set_acmp(instance.peri.id() as usize, true));
 
+        // enable/disable acmp
+        instance.set_enabled(config.enabled);
+
         instance
     }
 
-    pub fn set_enable(&mut self, enabled: bool) {
+    /// Set Acmp enabled/disabled
+    pub fn set_enabled(&mut self, enabled: bool) {
         self.peri.regs().ctrl().modify(|w| w.set_en(enabled));
     }
 
+    /// Configure Capacitive Sense internal resistor
     pub fn set_input_cs_res(&mut self, cs_resistor: Option<CsResSel>) {
         self.peri.regs().inputsel().modify(|w| match cs_resistor {
             Some(res) => {
@@ -143,6 +148,8 @@ pub struct Config {
     pub hist_0: Hysteresis,
     pub hist_1: Hysteresis,
     pub input_sel: InputSelection,
+    /// Acmp enabled
+    pub enabled: bool,
 }
 
 #[derive(Debug, Default, Clone, Copy)]

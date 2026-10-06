@@ -1,5 +1,6 @@
 //! Peripheral Reflex System
 
+pub use crate::pac::prs::vals::ChCtrlEdsel;
 use crate::{
     cmu::CmuClkOutId,
     gpio::exti::ExtiId,
@@ -126,6 +127,11 @@ impl<const CN: u8> PrsChannel<CN> {
     /// Get the PRS channel ID
     pub fn id(&self) -> PrsChannelId {
         PrsChannelId::from_u8_unchecked(CN)
+    }
+
+    pub fn set_edge(&mut self, edge_sel: ChCtrlEdsel) {
+        let r = Self::peri().ch_ctrl(CN as usize);
+        r.modify(|w| w.set_edsel(edge_sel));
     }
 
     /// Set the channel source (producer)

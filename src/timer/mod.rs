@@ -149,6 +149,26 @@ impl<'d, T: TimerInstance> Timer<'d, T> {
         instance
     }
 
+    /// Start Timer
+    pub fn start(&mut self) {
+        self.peri.regs().cmd().write(|w| w.set_start(true));
+    }
+
+    /// Stop Timer
+    pub fn stop(&mut self) {
+        self.peri.regs().cmd().write(|w| w.set_stop(true));
+    }
+
+    /// Get Timer count value
+    pub fn count(&mut self) -> u16 {
+        self.peri.regs().cnt().read().cnt()
+    }
+
+    /// Set Timer count value
+    pub fn set_count(&mut self, count: u16) {
+        self.peri.regs().cnt().write(|w| w.set_cnt(count));
+    }
+
     /// Split the timer into channels which may be specialised for various uses (delay, pwm, etc.)
     pub fn into_channels(
         self,
