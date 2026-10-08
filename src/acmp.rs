@@ -44,7 +44,7 @@ impl<'d, T: AcmpInstance> Acmp<'d, T> {
         let mut instance = Self { peri };
         let p = instance.peri.regs();
 
-        // disable clock
+        // enable clock
         crate::pac::CMU
             .hfperclken0()
             .modify(|w| w.set_acmp(instance.peri.id() as usize, true));
@@ -72,11 +72,6 @@ impl<'d, T: AcmpInstance> Acmp<'d, T> {
         instance.set_input_va(config.input_sel.va_sel);
         instance.set_input_neg(config.input_sel.neg_sel);
         instance.set_input_pos(config.input_sel.pos_sel);
-
-        // enable clock
-        crate::pac::CMU
-            .hfperclken0()
-            .modify(|w| w.set_acmp(instance.peri.id() as usize, true));
 
         // enable/disable acmp
         instance.set_enabled(config.enabled);
@@ -732,39 +727,39 @@ pub enum InputSelect {
     /// Dedicated APORT4X CHannel 13
     Aport4XCh13,
     /// Dedicated APORT4Y CHannel 14
-    Aport4YCh16,
-    /// Dedicated APORT4X CHannel 15
-    Aport4XCh17,
-    /// Dedicated APORT4Y CHannel 16
-    Aport4YCh18,
-    /// Dedicated APORT4X CHannel 17
-    Aport4XCh19,
-    /// Dedicated APORT4Y CHannel 18
-    Aport4YCh20,
-    /// Dedicated APORT4X CHannel 19
-    Aport4XCh21,
-    /// Dedicated APORT4Y CHannel 20
-    Aport4YCh22,
-    /// Dedicated APORT4X CHannel 21
-    Aport4XCh23,
-    /// Dedicated APORT4Y CHannel 22
-    Aport4YCh24,
-    /// Dedicated APORT4X CHannel 23
-    Aport4XCh25,
-    /// Dedicated APORT4Y CHannel 24
-    Aport4YCh26,
-    /// Dedicated APORT4X CHannel 25
-    Aport4XCh27,
-    /// Dedicated APORT4Y CHannel 26
-    Aport4YCh28,
-    /// Dedicated APORT4X CHannel 27
-    Aport4XCh29,
-    /// Dedicated APORT4Y CHannel 28
-    Aport4YCh30,
-    /// Dedicated APORT4X CHannel 29
     Aport4YCh14,
-    /// Dedicated APORT4Y CHannel 30
+    /// Dedicated APORT4X CHannel 15
     Aport4XCh15,
+    /// Dedicated APORT4Y CHannel 16
+    Aport4YCh16,
+    /// Dedicated APORT4X CHannel 17
+    Aport4XCh17,
+    /// Dedicated APORT4Y CHannel 18
+    Aport4YCh18,
+    /// Dedicated APORT4X CHannel 19
+    Aport4XCh19,
+    /// Dedicated APORT4Y CHannel 20
+    Aport4YCh20,
+    /// Dedicated APORT4X CHannel 21
+    Aport4XCh21,
+    /// Dedicated APORT4Y CHannel 22
+    Aport4YCh22,
+    /// Dedicated APORT4X CHannel 23
+    Aport4XCh23,
+    /// Dedicated APORT4Y CHannel 24
+    Aport4YCh24,
+    /// Dedicated APORT4X CHannel 25
+    Aport4XCh25,
+    /// Dedicated APORT4Y CHannel 26
+    Aport4YCh26,
+    /// Dedicated APORT4X CHannel 27
+    Aport4XCh27,
+    /// Dedicated APORT4Y CHannel 28
+    Aport4YCh28,
+    /// Dedicated APORT4X CHannel 29
+    Aport4YCh29,
+    /// Dedicated APORT4Y CHannel 30
+    Aport4XCh30,
     /// Dedicated APORT4X CHannel 31
     Aport4XCh31,
     /// Low-Power Sampled Voltage

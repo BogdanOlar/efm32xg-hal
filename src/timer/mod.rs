@@ -77,10 +77,10 @@ impl<'d, T: TimerInstance> Timer<'d, T> {
         let instance = Self { peri };
         let p = instance.peri.regs();
 
-        // Disable the timer peripheral clock for this instance.
+        // Enable the timer peripheral clock for this instance.
         crate::pac::CMU
             .hfperclken0()
-            .modify(|w| w.set_timer(instance.peri.id() as usize, false));
+            .modify(|w| w.set_timer(instance.peri.id() as usize, true));
 
         // FIXME: reset interrupts, etc
 
@@ -92,7 +92,11 @@ impl<'d, T: TimerInstance> Timer<'d, T> {
         });
         p.cnt().write(|w| w.set_cnt(config.count));
         p.top().write(|w| w.set_top(config.top));
-        p.top().write(|w| w.set_top(config.top));
+
+        // Configure overflow interrupt if requested
+        if config.overflow_interrupt {
+            p.ien().write(|w| w.set_of(true));
+        }
 
         for (timer_channel_id, ch_config) in config
             .channels
@@ -141,11 +145,6 @@ impl<'d, T: TimerInstance> Timer<'d, T> {
             }
         }
 
-        // Enable the timer peripheral clock
-        crate::pac::CMU
-            .hfperclken0()
-            .modify(|w| w.set_timer(instance.peri.id() as usize, true));
-
         instance
     }
 
@@ -167,6 +166,30 @@ impl<'d, T: TimerInstance> Timer<'d, T> {
     /// Set Timer count value
     pub fn set_count(&mut self, count: u16) {
         self.peri.regs().cnt().write(|w| w.set_cnt(count));
+    }
+
+    /// Wait for timer overflow by polling the hardware flag
+    /// Timer must be running before calling this function
+    /// This provides more precise timing than software delays
+    pub fn wait_for_overflow(&mut self) {
+        // Clear any pending overflow flag
+        self.peri.regs().ifc().write(|w| w.set_of(true));
+
+        // Poll until overflow flag is set
+        while self.peri.regs().if_().read().of() == false {
+            // Small delay to prevent excessive CPU usage
+            for _ in 0..4 {
+                core::hint::spin_loop();
+            }
+        }
+
+        // Clear the overflow flag
+        self.peri.regs().ifc().write(|w| w.set_of(true));
+    }
+
+    /// Clear overflow flag without waiting
+    pub fn clear_overflow_flag(&mut self) {
+        self.peri.regs().ifc().write(|w| w.set_of(true));
     }
 
     /// Split the timer into channels which may be specialised for various uses (delay, pwm, etc.)
@@ -294,6 +317,8 @@ pub struct TimerConfig {
     pub top: u16,
     /// Capture/Compare configs for channels
     pub channels: ChannelCofigs,
+    /// Enable overflow interrupt
+    pub overflow_interrupt: bool,
 }
 
 impl Default for TimerConfig {
@@ -305,6 +330,7 @@ impl Default for TimerConfig {
             count: Default::default(),
             top: Default::default(),
             channels: Default::default(),
+            overflow_interrupt: false,
         }
     }
 }

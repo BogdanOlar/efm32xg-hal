@@ -45,8 +45,8 @@ impl<'d, T: PrsInstance> Prs<'d, T> {
         let instance = Self { peri };
         let p = instance.peri.regs();
 
-        // Disable clock
-        CMU.hfbusclken0().modify(|w| w.set_prs(false));
+        // Enable clock
+        CMU.hfbusclken0().modify(|w| w.set_prs(true));
 
         // All registers have been verified to have a `0` reset value, so using the PAC default is fine in this case
         p.swpulse().write_value(Swpulse::default());
@@ -56,9 +56,6 @@ impl<'d, T: PrsInstance> Prs<'d, T> {
         for i in 0..PrsChannelId::COUNT {
             p.ch_ctrl(i).write_value(ChCtrl::default());
         }
-
-        // Enable clock
-        CMU.hfbusclken0().modify(|w| w.set_prs(true));
 
         instance
     }
